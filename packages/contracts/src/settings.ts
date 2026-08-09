@@ -471,6 +471,57 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
 );
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
 
+/**
+ * Settings for the built-in agent.
+ *
+ * Unlike every other provider here there is no `binaryPath`: the agent is
+ * compiled into the server, so there is nothing on disk to point at. What it
+ * needs instead is a credential, and that is supplied as the *name* of an
+ * environment variable rather than the key itself — the value lives in the
+ * instance environment with `sensitive: true`, which keeps it out of
+ * settings.json and off the wire. Putting an `apiKey` field here would write
+ * the user's key to disk in plain text.
+ */
+export const T3AgentSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    credentialEnvVar: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("ANTHROPIC_API_KEY")),
+      Schema.annotateKey({
+        title: "API key variable",
+        description:
+          "Name of the environment variable holding the API key. Set its value below, where it is stored as a secret rather than in settings.",
+        providerSettingsForm: {
+          placeholder: "ANTHROPIC_API_KEY",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    defaultModel: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Default model",
+        description: "Leave blank to use the built-in default.",
+        providerSettingsForm: {
+          placeholder: "claude-sonnet-5",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: ["credentialEnvVar", "defaultModel"],
+  },
+);
+export type T3AgentSettings = typeof T3AgentSettings.Type;
+
 export const ObservabilitySettings = Schema.Struct({
   otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
