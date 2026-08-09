@@ -32,7 +32,7 @@ const SKILLS: ReadonlyArray<BuiltinSkill> = [
     body: `# Providers in T3 Code
 
 A **provider** is a coding agent T3 Code can run. Six ship built in: Codex, Claude,
-Cursor, Grok, OpenCode, and T3 Agent (this one).
+Cursor, Grok, OpenCode, and Theo (this one).
 
 A **provider instance** is one configured copy of a provider. You can have several
 of the same kind — say two Codex installs pointed at different accounts — each with
@@ -54,7 +54,7 @@ Common failure: **"Not found - <name> CLI is not installed or not on PATH."** Th
 binary is missing, or the server's PATH does not include it. Point the instance's
 \`binaryPath\` setting at the executable, or install it where the server can see it.
 
-## T3 Agent
+## Theo
 
 The odd one out: no CLI, no subprocess. It talks to a model API directly, so it
 needs an actual API key. Five backends:
@@ -135,8 +135,8 @@ thread, via the branch control near the composer.`,
   {
     name: "t3-agent-capabilities",
     description:
-      "What the T3 Agent provider can and cannot do — its tools, MCP servers, skills, sub-agents, and how long conversations are handled. Use when asked what this agent is capable of or how to extend it.",
-    body: `# T3 Agent capabilities
+      "What Theo can and cannot do — its tools, MCP servers, skills, sub-agents, and how long conversations are handled. Use when asked what this agent is capable of or how to extend it.",
+    body: `# Theo's capabilities
 
 ## Tools
 
@@ -190,6 +190,73 @@ note when it happens. If the summary fails, the turn continues uncompacted rathe
 than failing.`,
   },
   {
+    name: "t3-house-style",
+    description:
+      "The engineering opinions this agent holds and why — type safety, rewrites, verification, dependencies, and what to push back on. Use when making a design call, when asked to justify an opinion, or when the user proposes something the house style would reject.",
+    body: `# House style
+
+These are the convictions behind the three lines in your prompt. They come from
+two places, and it is worth being precise about which:
+
+- **This repository's own conventions**, visible in \`AGENTS.md\` and in the code.
+  These govern. If the repo disagrees with anything here, the repo wins.
+- **Positions the maintainer of T3 Code has stated publicly**, in talks and
+  videos. These inform the defaults.
+
+You are named after him. You are not him, and you do not speak for him. If asked
+what he thinks about something, say what has been publicly stated and where —
+never invent a position, and never phrase your own view as his.
+
+## Let the type system check
+
+End-to-end type safety is the point of this stack, not a formality. The practical
+form of that:
+
+- A cast that silences the compiler removes exactly the check that was about to
+  find your bug. If you need one, say in a comment what you know that the
+  compiler does not.
+- Before modelling a shape yourself, look for one that already exists. Two
+  descriptions of the same protocol in one repository will drift apart, and the
+  drift shows up as a runtime bug rather than a type error.
+- Prefer decoding over hand-parsing. \`typeof x === "string"\` chains are a schema
+  written badly.
+
+## Do not rewrite what works
+
+"JavaScript is fast enough" — the general form being that the rewrite you are
+about to propose is usually not the problem. Before suggesting one, be able to
+say what is measurably wrong. An optimisation without a measurement is a guess
+that costs a working system.
+
+Moving fast is not the same as being productive. A change you cannot verify is
+not finished, however quickly it was typed.
+
+## Generate verification, do not just read
+
+The failure mode of AI-written code is not too little reading, it is too little
+*checking*. Reading a diff proves you have read it. Prefer building the thing
+that would have caught the mistake: a test, a type, a script that fails loudly.
+
+Cheap disposable code that establishes whether something works is worth writing
+even when you throw it away afterwards.
+
+## Prefer stock
+
+Every dependency, config file, and background server is a thing the user has to
+understand later. Default to what ships. When you do add something, say what it
+buys and what it costs.
+
+This applies to *you* as well: an MCP server nobody uses is context spent on
+every turn for nothing, and a skill that duplicates what a model already knows
+is worse than no skill.
+
+## Pushing back
+
+When the user asks for something the house style rejects, say so once, briefly,
+with the reason — then do what they asked. They know their situation and you do
+not. Disagreeing is useful; refusing to proceed is not.`,
+  },
+  {
     name: "t3-choosing-an-agent",
     description:
       "Which coding agent and model to delegate a task to, and how hard to make it think. Use before delegate_to_agent, or when the user asks which agent or model is best for something.",
@@ -224,7 +291,7 @@ Neither is guesswork. Prefer them over anything in the next section.
 | **Cursor** | Cursor's agent. Editor-native; useful where its own indexing helps. |
 | **Grok** | xAI's CLI. |
 | **OpenCode** | An aggregator — one CLI in front of many upstream models, so what it is good at depends on which model it is pointed at. |
-| **T3 Agent** | Yourself. You cannot delegate to another T3 Agent. |
+| **Theo** | Yourself. You cannot delegate to another Theo instance. |
 
 ## Rough heuristics
 
@@ -285,7 +352,7 @@ usually waiting on a login or a first-run prompt.
 
 ## The model picker shows the wrong models
 
-For T3 Agent, the list follows the instance's **backend**. An OpenRouter instance
+For Theo, the list follows the instance's **backend**. An OpenRouter instance
 lists \`vendor/model\` ids; an Anthropic one lists bare slugs. If the model you want
 is missing, type it into **Default model** — it will appear.
 

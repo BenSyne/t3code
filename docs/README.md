@@ -10,7 +10,7 @@
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Background service (Linux)](./user/background-service.md)
-- Providers: [T3 Agent](./user/t3-agent.md) · [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md)
+- Providers: [Theo](./user/t3-agent.md) · [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md)
 
 Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)
 

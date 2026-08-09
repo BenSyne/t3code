@@ -54,7 +54,7 @@ export const PROVIDER_OPTIONS: Array<{
   },
   {
     value: ProviderDriverKind.make("t3agent"),
-    label: "T3 Agent",
+    label: "Theo",
     available: true,
     pickerSidebarBadge: "new",
   },
