@@ -7,7 +7,7 @@ orchestration layer does not know which one is behind a thread.
 
 ## Built-in drivers
 
-[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS` with five entries:
+[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS` with six entries:
 
 | Driver kind   | Driver source                           |
 | ------------- | --------------------------------------- |
@@ -16,6 +16,18 @@ orchestration layer does not know which one is behind a thread.
 | `cursor`      | [`Drivers/CursorDriver.ts`][cursor]     |
 | `grok`        | [`Drivers/GrokDriver.ts`][grok]         |
 | `opencode`    | [`Drivers/OpenCodeDriver.ts`][opencode] |
+| `t3agent`     | [`Drivers/T3AgentDriver.ts`][t3agent]   |
+
+`t3agent` is the odd one out and worth understanding before reading it. The other five wrap an
+agent CLI running as a subprocess; `t3agent` is the agent, in-process, talking to a model API
+directly. It therefore asks the runtime for far less — there is no binary to find, no version to
+probe, and no login token to store. It still needs `FileSystem` and `ChildProcessSpawner`, because
+its own tools read files and run commands, but nothing about it launches a _provider_ process.
+
+Its implementation lives under [`apps/server/src/agent/`][agent] rather than beside the other
+adapters, because it is considerably more than a protocol translation: a turn loop, a tool
+registry, a permission gate, compaction, MCP, and skills. `Layers/T3AgentAdapter.ts` is the thin
+part that maps all of that onto the same `ProviderAdapter` contract as everything else.
 
 Each driver declares its `driverKind`, a `configSchema`, and a `create` function that builds an
 adapter in a child scope. Adapter implementations live beside them in
@@ -75,6 +87,8 @@ spills the whole accumulated text as one delta. The buffer also flushes at inter
 when a request opens (approval) or user input is requested, via
 `flushBufferedAssistantMessagesForTurn`.
 
+[t3agent]: ../../apps/server/src/provider/Drivers/T3AgentDriver.ts
+[agent]: ../../apps/server/src/agent/
 [drivers]: ../../apps/server/src/provider/builtInDrivers.ts
 [codex]: ../../apps/server/src/provider/Drivers/CodexDriver.ts
 [claude]: ../../apps/server/src/provider/Drivers/ClaudeDriver.ts

@@ -188,23 +188,51 @@ function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings
     : fallbackTextGenerationProvider(settings);
 }
 
+/**
+ * Pick any enabled provider to generate titles and commit messages with.
+ *
+ * `providerInstances` is checked first because it is where every provider now
+ * lives — the legacy `providers` record only ever held the five that predate
+ * multi-instance configuration. Searching only the legacy record left anyone
+ * whose providers are all instances with no fallback at all, and the symptom
+ * was silent: titles and commit messages simply stopped being generated.
+ */
 function fallbackTextGenerationProvider(settings: ServerSettings): ServerSettings {
-  const fallbackEntry = Object.entries(settings.providers).find(([, provider]) => provider.enabled);
-  const fallback = fallbackEntry ? ProviderDriverKind.make(fallbackEntry[0]) : undefined;
-  if (!fallback) {
-    return settings;
+  const instanceEntry = Object.entries(settings.providerInstances).find(
+    ([, instance]) => (instance.enabled ?? true) === true,
+  );
+  if (instanceEntry !== undefined) {
+    const [instanceId, instance] = instanceEntry;
+    return withTextGenerationSelection(settings, {
+      instanceId: ProviderInstanceId.make(instanceId),
+      model: defaultTextModelFor(instance.driver),
+    });
   }
 
-  return {
-    ...settings,
-    textGenerationModelSelection: {
-      instanceId: ProviderInstanceId.make(fallback),
-      model:
-        DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[fallback] ??
-        DEFAULT_MODEL_BY_PROVIDER[fallback] ??
-        DEFAULT_TEXT_GENERATION_MODEL,
-    } satisfies ModelSelection,
-  };
+  const legacyEntry = Object.entries(settings.providers).find(([, provider]) => provider.enabled);
+  if (legacyEntry === undefined) {
+    return settings;
+  }
+  const legacyDriver = ProviderDriverKind.make(legacyEntry[0]);
+  return withTextGenerationSelection(settings, {
+    instanceId: ProviderInstanceId.make(legacyDriver),
+    model: defaultTextModelFor(legacyDriver),
+  });
+}
+
+function withTextGenerationSelection(
+  settings: ServerSettings,
+  selection: ModelSelection,
+): ServerSettings {
+  return { ...settings, textGenerationModelSelection: selection };
+}
+
+function defaultTextModelFor(driver: ProviderDriverKind): string {
+  return (
+    DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[driver] ??
+    DEFAULT_MODEL_BY_PROVIDER[driver] ??
+    DEFAULT_TEXT_GENERATION_MODEL
+  );
 }
 
 // Values under these keys are compared as a whole — never stripped field-by-field.
