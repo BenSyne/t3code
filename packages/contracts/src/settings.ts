@@ -547,6 +547,20 @@ export const T3AgentSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed({})),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
+    /**
+     * Off by default, and deliberately so: turning it on lets this agent start
+     * threads on your other providers, which spends money on those keys rather
+     * than this one. The tools are absent from the prompt entirely while it is
+     * off, so the agent cannot try and be refused.
+     */
+    orchestrateOtherAgents: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({
+        title: "Let this agent run other agents",
+        description:
+          "Allows delegating work to Codex, Claude, Cursor, Grok, or OpenCode and reading the results. Delegated threads appear in the sidebar and can be interrupted or reverted like any other. Uses those providers' own credits.",
+      }),
+    ),
   },
   {
     order: ["backend", "credentialEnvVar", "baseUrl", "defaultModel"],

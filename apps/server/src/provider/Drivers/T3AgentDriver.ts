@@ -28,6 +28,10 @@ import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../../config.ts";
 import * as UsageService from "../../usage/UsageService.ts";
 import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
+import type { ThreadId } from "@t3tools/contracts";
+import { ConductorClient } from "../../agent/conductor/ConductorClient.ts";
+import type { ConductorContext } from "../../agent/conductor/conductorTools.ts";
+import { DEFAULT_FLEET_POLICY } from "../../agent/conductor/fleet.ts";
 import { McpServerConfig, type McpServers } from "../../agent/mcp/serverConfig.ts";
 import { resolveCredential } from "../../agent/model/credentials.ts";
 import { contextWindowFor } from "../../agent/model/ModelCatalog.ts";
@@ -73,6 +77,15 @@ function decodeMcpServers(raw: Record<string, unknown>): McpServers {
   return parsed;
 }
 
+/**
+ * What this driver needs from the runtime.
+ *
+ * `ConductorClient` is the only addition cross-provider orchestration needed,
+ * and deliberately so: one narrow service rather than the engine, projections
+ * and snapshot store separately, which would make every context that builds a
+ * driver stand up all three. Note what is *not* here — `ProviderRegistry`,
+ * which builds this driver and so cannot be depended on from inside it.
+ */
 export type T3AgentDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
   | ServerConfig.ServerConfig
@@ -81,7 +94,8 @@ export type T3AgentDriverEnv =
   | Crypto.Crypto
   | FileSystem.FileSystem
   | HttpClient.HttpClient
-  | ServerSettingsService;
+  | ServerSettingsService
+  | ConductorClient;
 
 export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = {
   driverKind: T3AGENT_DRIVER_KIND,
@@ -100,6 +114,11 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
 
       const backend = config.backend;
       const baseUrl = config.baseUrl.trim() === "" ? undefined : config.baseUrl.trim();
+      const crypto = yield* Crypto.Crypto;
+      // Threads this instance has started, for the fleet limit. Per instance
+      // rather than per session: the cap exists to bound concurrent spend, and
+      // spend does not reset because the user opened a new thread.
+      const startedThreads = new Set<ThreadId>();
 
       // Read on demand rather than captured: a key added after the instance was
       // materialised should work without restarting the server.
@@ -163,7 +182,25 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
         ),
       );
 
+      // Built once per instance. Off unless the user asks for it: these tools
+      // start real threads on other providers, which costs money on whatever
+      // key those providers use.
+      const conductor: ConductorContext | null = config.orchestrateOtherAgents
+        ? {
+            client: yield* ConductorClient,
+            policy: DEFAULT_FLEET_POLICY,
+            // Its own kind, so the self-targeting guard can recognise a T3
+            // Agent instance as itself however it has been renamed.
+            selfDriverKind: T3AGENT_DRIVER_KIND,
+            nextId: crypto.randomUUIDv4.pipe(Effect.orDie),
+            nowIso: Effect.map(DateTime.now, DateTime.formatIso),
+            runningThreads: () => startedThreads.size,
+            noteStarted: (threadId) => startedThreads.add(threadId),
+          }
+        : null;
+
       const adapter = yield* makeT3AgentAdapter({
+        conductor,
         credential,
         backend,
         defaultModel: defaultModelFor(config),

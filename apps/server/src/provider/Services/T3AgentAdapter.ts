@@ -16,6 +16,7 @@ import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessS
 
 import type { McpServers } from "../../agent/mcp/serverConfig.ts";
 import type { PermissionRule } from "../../agent/permission/rules.ts";
+import type { ConductorContext } from "../../agent/conductor/conductorTools.ts";
 import type { BackendKind } from "../../agent/model/resolveLanguageModel.ts";
 import type { ResolvedCredential } from "../../agent/model/credentials.ts";
 import type { RateTable } from "../../usage/usagePricing.ts";
@@ -44,6 +45,15 @@ export interface T3AgentAdapterOptions {
   readonly rateTable: Effect.Effect<RateTable>;
   /** For discovering global skills. */
   readonly homeDirectory: string;
+  /**
+   * Lets this agent run the *other* agents, or null to withhold the ability.
+   *
+   * Null rather than an empty policy so the tools are absent from the prompt
+   * entirely when the feature is off. A tool the model can see is a tool it
+   * will try, and spending a step to be told no is worse than never offering
+   * it. Off is the default: orchestration spends money on other providers.
+   */
+  readonly conductor: ConductorContext | null;
 }
 
 /**

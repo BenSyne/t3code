@@ -40,6 +40,7 @@ import * as Prompt from "effect/unstable/ai/Prompt";
 import { HttpClient } from "effect/unstable/http";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
+import { conductorContributor } from "../../agent/conductor/conductorTools.ts";
 import { describeTurnFailure } from "../../agent/events/failureMessage.ts";
 import { toPricingTotals } from "../../agent/events/usage.ts";
 import { priceUsage } from "../../usage/usagePricing.ts";
@@ -341,6 +342,11 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         coreTools,
         skillContributor(skills),
         mcpContributor(pool.servers),
+        // Only at the top level. A sub-agent that can start provider threads
+        // turns one delegation into a fan-out nobody asked for, on the user's
+        // key — and the depth cap that bounds `task` does not bound what those
+        // threads then do.
+        conductorContributor(depth === 0 ? options.conductor : null),
         subagentContributor({
           depth,
           systemPrompt: () => systemPrompt,
