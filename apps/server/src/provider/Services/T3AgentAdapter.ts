@@ -26,6 +26,8 @@ export interface T3AgentAdapterOptions {
   /** Re-read per session so a key added after startup is picked up. */
   readonly credential: () => ResolvedCredential;
   readonly backend: BackendKind;
+  /** Override for the provider's endpoint. Required for OpenAI-compatible servers. */
+  readonly baseUrl?: string | undefined;
   readonly defaultModel: string;
   /** Environment for commands the `bash` tool runs. */
   readonly commandEnv: Record<string, string>;
@@ -36,6 +38,8 @@ export interface T3AgentAdapterOptions {
   /** Where conversations are written so they survive a restart. */
   readonly transcriptDirectory: string;
   readonly mcpServers: McpServers;
+  /** For discovering global skills. */
+  readonly homeDirectory: string;
 }
 
 /**

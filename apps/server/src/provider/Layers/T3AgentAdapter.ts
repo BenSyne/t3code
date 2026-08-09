@@ -54,8 +54,11 @@ import { readProjectContext } from "../../agent/prompt/agentsMd.ts";
 import { buildSystemPrompt } from "../../agent/prompt/systemPrompt.ts";
 import { connectAll } from "../../agent/mcp/McpClientPool.ts";
 import { mcpContributor } from "../../agent/mcp/mcpTools.ts";
+import { discoverSkills, skillCatalogBlock } from "../../agent/skills/discover.ts";
+import { skillContributor } from "../../agent/skills/skillTool.ts";
+import { subagentContributor } from "../../agent/subagent/taskTool.ts";
 import { coreTools } from "../../agent/tools/core.ts";
-import { buildToolkit, resolveTools } from "../../agent/tools/registry.ts";
+import { buildToolkit, resolveTools, type ToolContributor } from "../../agent/tools/registry.ts";
 import { ProviderAdapterRequestError } from "../Errors.ts";
 import type { T3AgentAdapterOptions, T3AgentAdapterShape } from "../Services/T3AgentAdapter.ts";
 
@@ -210,7 +213,51 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         }
       }
 
-      const resolved = yield* resolveTools([coreTools, mcpContributor(pool.servers)], toolContext);
+      const discovered = yield* discoverSkills({
+        workspaceRoot,
+        homeDirectory: options.homeDirectory,
+      });
+
+      for (const rejection of discovered.rejected) {
+        yield* events.warning({
+          threadId: input.threadId,
+          message: `Skill at ${rejection.path} was skipped: ${rejection.reason}.`,
+        });
+      }
+
+      // Built at a depth so a sub-agent's own toolkit can be built the same
+      // way, one level down, and lose `task` at the cap.
+      const modelLayer = Layer.provide(
+        resolveLanguageModel({
+          backend: options.backend,
+          credential: credential.key,
+          model,
+          ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
+        }),
+        Layer.succeed(HttpClient.HttpClient, httpClient),
+      );
+
+      const contributorsAtDepth = (depth: number): ReadonlyArray<ToolContributor> => [
+        coreTools,
+        skillContributor(discovered.skills),
+        mcpContributor(pool.servers),
+        subagentContributor({
+          depth,
+          systemPrompt,
+          contextWindow: options.contextWindowFor(model),
+          toolkitForDepth: (childDepth) =>
+            Effect.flatMap(resolveTools(contributorsAtDepth(childDepth), toolContext), (child) =>
+              buildToolkit(child.tools),
+            ),
+          modelLayer,
+          emitter: events,
+          threadId: input.threadId,
+          resolveTurnId: () => activeTurns.get(input.threadId),
+          isInterrupted: () => store.get(input.threadId)?.interrupted === true,
+        }),
+      ];
+
+      const resolved = yield* resolveTools(contributorsAtDepth(0), toolContext);
       const toolkit = yield* buildToolkit(resolved.tools);
 
       for (const dropped of resolved.dropped) {
@@ -225,6 +272,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         workspaceRoot,
         projectContext: projectContext.text,
         toolNames: resolved.tools.map((entry) => entry.tool.name),
+        skillCatalog: skillCatalogBlock(discovered.skills),
       });
 
       // Pick up where a previous server process left off, if it left anything.
@@ -241,10 +289,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         session,
         model,
         // Transport is baked in here, once, so a turn requires nothing further.
-        modelLayer: Layer.provide(
-          resolveLanguageModel({ backend: options.backend, credential: credential.key, model }),
-          Layer.succeed(HttpClient.HttpClient, httpClient),
-        ),
+        modelLayer,
         workspaceRoot,
         toolkit,
         contextWindow: options.contextWindowFor(model),
