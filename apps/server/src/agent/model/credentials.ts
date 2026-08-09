@@ -18,7 +18,16 @@
 import * as Redacted from "effect/Redacted";
 
 /** Where a resolved key came from. Surfaced in the snapshot for support. */
-export type CredentialSource = "instance-environment" | "process-environment";
+export type CredentialSource = "instance-environment" | "process-environment" | "not-required";
+
+/**
+ * Stand-in key for a backend that does not authenticate.
+ *
+ * A local server ignores the value, but the HTTP client still insists on
+ * having one. Substituting here means a user running Ollama never sees an
+ * "unauthenticated" instance for a key that was never needed.
+ */
+export const LOCAL_PLACEHOLDER_KEY = "not-required";
 
 export type ResolvedCredential =
   | {
@@ -47,10 +56,27 @@ export function resolveCredential(input: {
   readonly variableName: string;
   readonly instanceEnv: NodeJS.ProcessEnv;
   readonly processEnv?: NodeJS.ProcessEnv;
+  /**
+   * True for a backend that authenticates nothing, such as a local server.
+   *
+   * A real key still wins if one is set — some local gateways do check it —
+   * so this only changes what happens when none is found.
+   */
+  readonly keyOptional?: boolean;
 }): ResolvedCredential {
   const variableName = input.variableName.trim();
+  const whenAbsent = (): ResolvedCredential =>
+    input.keyOptional === true
+      ? {
+          _tag: "Resolved",
+          key: Redacted.make(LOCAL_PLACEHOLDER_KEY),
+          variableName: variableName === "" ? input.variableName : variableName,
+          source: "not-required",
+        }
+      : { _tag: "Missing", variableName: variableName === "" ? input.variableName : variableName };
+
   if (variableName === "") {
-    return { _tag: "Missing", variableName: input.variableName };
+    return whenAbsent();
   }
 
   const fromInstance = nonBlank(input.instanceEnv[variableName]);
@@ -73,7 +99,7 @@ export function resolveCredential(input: {
     };
   }
 
-  return { _tag: "Missing", variableName };
+  return whenAbsent();
 }
 
 function nonBlank(value: string | undefined): string | undefined {

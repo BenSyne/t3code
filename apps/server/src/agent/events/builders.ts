@@ -23,10 +23,13 @@
  * @module agent/events/builders
  */
 import type {
+  CanonicalItemType,
   EventId,
   ProviderDriverKind,
   ProviderRuntimeEvent,
+  RuntimeItemId,
   ThreadId,
+  ThreadTokenUsageSnapshot,
   TurnId,
 } from "@t3tools/contracts";
 
@@ -79,6 +82,106 @@ export function assistantTextDeltaEvent(
     type: "content.delta",
     turnId: ctx.turnId,
     payload: { streamKind: "assistant_text", delta: ctx.delta },
+  };
+}
+
+/**
+ * One chunk of the model's reasoning.
+ *
+ * Separate from assistant text so the client can collapse it. Sharing the
+ * builder and passing a `streamKind` would put the two literals one typo apart.
+ */
+export function reasoningDeltaEvent(
+  ctx: TurnContext & { readonly delta: string },
+): ProviderRuntimeEvent {
+  return {
+    ...base(ctx),
+    type: "content.delta",
+    turnId: ctx.turnId,
+    payload: { streamKind: "reasoning_text", delta: ctx.delta },
+  };
+}
+
+/**
+ * The envelope around a run of assistant text.
+ *
+ * Deltas alone leave the client guessing where one message ends and the next
+ * begins, which matters here because a turn produces several: one per step,
+ * separated by tool calls.
+ */
+export function assistantMessageItemEvent(
+  ctx: TurnContext & {
+    readonly itemId: RuntimeItemId;
+    readonly lifecycle: "item.started" | "item.completed";
+  },
+): ProviderRuntimeEvent {
+  return {
+    ...base(ctx),
+    type: ctx.lifecycle,
+    turnId: ctx.turnId,
+    itemId: ctx.itemId,
+    payload: {
+      itemType: "assistant_message",
+      status: ctx.lifecycle === "item.completed" ? "completed" : "inProgress",
+    },
+  };
+}
+
+/**
+ * A tool call appearing, updating, or finishing.
+ *
+ * `itemId` is the model's own tool-call id, so the started and completed events
+ * refer to the same timeline row without us inventing a correlation key.
+ */
+export function toolItemEvent(
+  ctx: TurnContext & {
+    readonly itemId: RuntimeItemId;
+    readonly lifecycle: "item.started" | "item.updated" | "item.completed";
+    readonly itemType: CanonicalItemType;
+    readonly status: "inProgress" | "completed" | "failed";
+    readonly title: string;
+    readonly detail?: string | undefined;
+    readonly data?: Record<string, unknown> | undefined;
+  },
+): ProviderRuntimeEvent {
+  return {
+    ...base(ctx),
+    type: ctx.lifecycle,
+    turnId: ctx.turnId,
+    itemId: ctx.itemId,
+    payload: {
+      itemType: ctx.itemType,
+      status: ctx.status,
+      title: ctx.title,
+      ...(ctx.detail === undefined || ctx.detail === "" ? {} : { detail: ctx.detail }),
+      ...(ctx.data === undefined ? {} : { data: ctx.data }),
+    },
+  };
+}
+
+export function tokenUsageEvent(
+  ctx: EventContext & { readonly usage: ThreadTokenUsageSnapshot },
+): ProviderRuntimeEvent {
+  return {
+    ...base(ctx),
+    type: "thread.token-usage.updated",
+    payload: { usage: ctx.usage },
+  };
+}
+
+/**
+ * Something went wrong that the turn survived.
+ *
+ * A shadowed tool name, an MCP server that would not start. These belong in
+ * front of the user but must never be mistaken for a failed turn.
+ */
+export function runtimeWarningEvent(
+  ctx: EventContext & { readonly message: string },
+): ProviderRuntimeEvent {
+  return {
+    ...base(ctx),
+    type: "runtime.warning",
+    payload: { message: ctx.message },
   };
 }
 

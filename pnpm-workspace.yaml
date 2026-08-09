@@ -31,6 +31,8 @@ catalog:
   "@clerk/react": 6.12.10
   "@clerk/shared": 4.25.10
   "@effect/ai-anthropic": 4.0.0-beta.103
+  "@effect/ai-openai": 4.0.0-beta.103
+  "@effect/ai-openrouter": 4.0.0-beta.103
   "@effect/atom-react": 4.0.0-beta.103
   "@effect/openapi-generator": 4.0.0-beta.103
   "@effect/platform-bun": 4.0.0-beta.103
@@ -66,6 +68,8 @@ minimumReleaseAgeExclude:
   - "@distilled.cloud/neon@0.30.2"
   - "@distilled.cloud/planetscale@0.30.2"
   - "@effect/ai-anthropic@4.0.0-beta.103"
+  - "@effect/ai-openai@4.0.0-beta.103"
+  - "@effect/ai-openrouter@4.0.0-beta.103"
   - "@effect/atom-react@4.0.0-beta.103"
   - "@effect/openapi-generator@4.0.0-beta.103"
   - "@effect/platform-bun@4.0.0-beta.103"
@@ -92,6 +96,8 @@ overrides:
   "@clerk/react": "catalog:"
   "@clerk/shared": "catalog:"
   "@effect/ai-anthropic": "catalog:"
+  "@effect/ai-openai": "catalog:"
+  "@effect/ai-openrouter": "catalog:"
   "@effect/atom-react": "catalog:"
   "@effect/platform-bun": "catalog:"
   "@effect/platform-node": "catalog:"

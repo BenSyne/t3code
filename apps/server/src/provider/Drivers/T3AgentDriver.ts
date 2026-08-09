@@ -13,14 +13,17 @@
 import { DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER, T3AgentSettings } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import * as FileSystem from "effect/FileSystem";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
 import { resolveCredential } from "../../agent/model/credentials.ts";
+import { contextWindowFor } from "../../agent/model/ModelCatalog.ts";
 import { resolveLanguageModel } from "../../agent/model/resolveLanguageModel.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
@@ -46,7 +49,9 @@ const decodeT3AgentSettings = Schema.decodeSync(T3AgentSettings);
 
 export type T3AgentDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
+  | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
+  | FileSystem.FileSystem
   | HttpClient.HttpClient
   | ServerSettingsService;
 
@@ -63,10 +68,19 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
       const serverSettings = yield* ServerSettingsService;
       const instanceEnv = mergeProviderInstanceEnvironment(environment);
 
+      const backend = config.backend;
+      const baseUrl = config.baseUrl.trim() === "" ? undefined : config.baseUrl.trim();
+
       // Read on demand rather than captured: a key added after the instance was
       // materialised should work without restarting the server.
       const credential = () =>
-        resolveCredential({ variableName: config.credentialEnvVar, instanceEnv });
+        resolveCredential({
+          variableName: config.credentialEnvVar,
+          instanceEnv,
+          // A local server authenticates nothing, so demanding a key would
+          // report an instance as broken when it is ready to use.
+          keyOptional: backend === "openai-compat",
+        });
 
       const stampIdentity = (draft: ServerProviderDraft) => ({
         ...draft,
@@ -121,7 +135,11 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
 
       const adapter = yield* makeT3AgentAdapter({
         credential,
+        backend,
         defaultModel: defaultModelFor(config),
+        commandEnv: instanceEnv as Record<string, string>,
+        contextWindowFor: (model) => contextWindowFor(backend, model),
+        ...(baseUrl === undefined ? {} : { baseUrl }),
       });
 
       // Titles and commit messages run on a cheaper model than the chat turn.
@@ -141,9 +159,10 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
             _tag: "Ready" as const,
             layer: Layer.provide(
               resolveLanguageModel({
-                backend: "anthropic",
+                backend,
                 credential: resolved.key,
                 model: textGenerationModel,
+                ...(baseUrl === undefined ? {} : { baseUrl }),
               }),
               Layer.succeed(HttpClient.HttpClient, httpClient),
             ),
