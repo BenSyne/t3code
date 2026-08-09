@@ -63,18 +63,20 @@ use. Local (stdio) servers are supported; remote HTTP servers are not yet.
 **Sub-agents** — can hand a self-contained job to a fresh agent and get back a summary, which keeps
 a long search from filling the main conversation.
 
-**Other agents** — see below. Off by default.
+**Other agents** — see below. On by default.
 
 ## Running your other agents
 
 Theo can drive the rest of T3 Code on your behalf: start work on Codex, Claude, Cursor, Grok or
-OpenCode, follow it, and tidy up after it. This is off until you turn it on.
+OpenCode, follow it, and tidy up after it. This is on out of the box.
 
-Switch on **Let this agent run other agents** in the instance's settings. It is off by default
-because these tools start real threads on other providers, which spends money on whatever key those
-providers use.
+Worth knowing what that spends. A delegation runs on whatever key the _target_ provider holds — for
+a CLI signed in to a subscription that is nothing extra per turn, and for a provider holding an API
+key it is real money. Turn off **Let this agent run other agents** in the instance's settings if you
+would rather it never did that; the tools disappear from its prompt entirely rather than being
+offered and refused.
 
-Once on, it can:
+It can:
 
 - **See what is available** — which agents are set up, whether each one bills per token or draws on
   a subscription you have already paid for, and which models each can be pointed at.
@@ -99,7 +101,8 @@ is how you stay in the loop; leaving it off means Theo tells you what is waiting
 for you. Answering a _question_ a thread asked is different and allowed, but only on threads Theo
 started itself — it will not put words in your mouth in a conversation it was never part of.
 
-By default it will run at most four delegated threads at once.
+It will run at most four delegated threads at once, and it can never delegate to another Theo
+instance — an agent that can start copies of itself is an unbounded fan-out on your bill.
 
 ## Permissions
 

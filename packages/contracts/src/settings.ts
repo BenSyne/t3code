@@ -221,13 +221,28 @@ const makeBinaryPathSetting = (fallback: string) =>
     Schema.withDecodingDefault(Effect.succeed(fallback)),
   );
 
-export type ProviderSettingsFormControl = "text" | "password" | "textarea" | "switch";
+export type ProviderSettingsFormControl = "text" | "password" | "textarea" | "switch" | "select";
+
+export interface ProviderSettingsFormOption {
+  readonly value: string;
+  readonly label: string;
+}
 
 export interface ProviderSettingsFormAnnotation {
   readonly control?: ProviderSettingsFormControl | undefined;
   readonly placeholder?: string | undefined;
   readonly hidden?: boolean | undefined;
   readonly clearWhenEmpty?: "omit" | "persist" | undefined;
+  /**
+   * Choices for a `select` field.
+   *
+   * Listed here rather than read off the schema's literals, because the
+   * literals are wire values (`openai-compat`) and a person needs to see a
+   * name (`OpenAI-compatible`). Kept honest by a test asserting every literal
+   * appears exactly once, so adding a backend and forgetting the label fails
+   * the build rather than shipping a value nobody can pick.
+   */
+  readonly options?: ReadonlyArray<ProviderSettingsFormOption> | undefined;
 }
 
 export interface ProviderSettingsFormSchemaAnnotation {
@@ -480,6 +495,21 @@ export type OpenCodeSettings = typeof OpenCodeSettings.Type;
  * settings.json and off the wire. Putting an `apiKey` field here would write
  * the user's key to disk in plain text.
  */
+/**
+ * The backends a Theo instance can point at, in the order they are offered.
+ *
+ * OpenRouter first because it is the default and the easiest starting point;
+ * OpenAI-compatible last because it is the escape hatch, and it is the only
+ * one that needs a Base URL.
+ */
+export const T3_AGENT_BACKEND_OPTIONS = [
+  { value: "openrouter", label: "OpenRouter" },
+  { value: "anthropic", label: "Anthropic" },
+  { value: "openai", label: "OpenAI" },
+  { value: "cerebras", label: "Cerebras" },
+  { value: "openai-compat", label: "OpenAI-compatible" },
+] as const satisfies ReadonlyArray<ProviderSettingsFormOption>;
+
 export const T3AgentSettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(
@@ -493,21 +523,36 @@ export const T3AgentSettings = makeProviderSettingsSchema(
       "cerebras",
       "openai-compat",
     ]).pipe(
-      Schema.withDecodingDefault(Effect.succeed("anthropic" as const)),
+      // OpenRouter is the default because it is the one key that reaches every
+      // model here — Anthropic, OpenAI, and the open-weight ones — so the
+      // out-of-the-box path is a single signup rather than a decision about
+      // which vendor to commit to first.
+      Schema.withDecodingDefault(Effect.succeed("openrouter" as const)),
       Schema.annotateKey({
         title: "Provider",
         description:
-          "Where requests go. Cerebras runs open-weight models very fast. Choose OpenAI-compatible to use Ollama, LM Studio, or any other server that speaks the OpenAI API.",
+          "Where requests go. OpenRouter reaches almost every model with one key and is the easiest place to start. Cerebras runs open-weight models very fast. Choose OpenAI-compatible to use Ollama, LM Studio, or any other server that speaks the OpenAI API.",
+        providerSettingsForm: {
+          // A list, not a text box. These are exact wire values — typing
+          // "OpenRouter" or "open-router" produces an instance that fails at
+          // the first request with nothing on screen explaining why.
+          control: "select",
+          options: T3_AGENT_BACKEND_OPTIONS,
+          // The value the user is looking at should be the value that is
+          // stored, rather than an omission that happens to decode to the
+          // same thing today.
+          clearWhenEmpty: "persist",
+        },
       }),
     ),
     credentialEnvVar: TrimmedString.pipe(
-      Schema.withDecodingDefault(Effect.succeed("ANTHROPIC_API_KEY")),
+      Schema.withDecodingDefault(Effect.succeed("OPENROUTER_API_KEY")),
       Schema.annotateKey({
         title: "API key variable",
         description:
           "Name of the environment variable holding the API key. Set its value in Environment variables above, marked sensitive, so it is stored as a secret rather than in settings.",
         providerSettingsForm: {
-          placeholder: "ANTHROPIC_API_KEY",
+          placeholder: "OPENROUTER_API_KEY",
           clearWhenEmpty: "omit",
         },
       }),
@@ -530,7 +575,10 @@ export const T3AgentSettings = makeProviderSettingsSchema(
         title: "Default model",
         description: "Leave blank to use the built-in default.",
         providerSettingsForm: {
-          placeholder: "claude-sonnet-5",
+          // An OpenRouter slug, to match the default provider — and a
+          // `vendor/model` one specifically, since that shape is the thing
+          // people get wrong on their first OpenRouter instance.
+          placeholder: "anthropic/claude-sonnet-5",
           clearWhenEmpty: "omit",
         },
       }),
@@ -548,13 +596,20 @@ export const T3AgentSettings = makeProviderSettingsSchema(
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
     /**
-     * Off by default, and deliberately so: turning it on lets this agent start
-     * threads on your other providers, which spends money on those keys rather
-     * than this one. The tools are absent from the prompt entirely while it is
-     * off, so the agent cannot try and be refused.
+     * On by default: orchestrating the agents you already have is most of the
+     * point of this one, and an instance that ships with it off mostly teaches
+     * people that the feature does not exist.
+     *
+     * The cost it can reach is bounded rather than absent. Delegation spends
+     * whatever key the *target* provider holds, which for a CLI signed in to a
+     * subscription is nothing per turn and for an API-key instance is real
+     * money. What keeps that from running away is the fleet limit, the ban on
+     * targeting another instance of itself, and approvals staying off — none
+     * of which this switch changes. Turning it off removes the tools from the
+     * prompt entirely, so the agent cannot try and be refused.
      */
     orchestrateOtherAgents: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({
         title: "Let this agent run other agents",
         description:
