@@ -125,23 +125,71 @@ export interface RunTurnResult {
  * Requires a `LanguageModel` — the caller provides it, which is what lets this
  * be tested against a stub with no network and no platform layer.
  */
+/**
+ * Retries allowed after a response the toolkit could not read.
+ *
+ * Two, because the first is usually a slip a nudge fixes and the second covers
+ * a model having a bad moment. Past that it is not going to converge, and every
+ * further attempt is a paid request producing the same garbage.
+ */
+const MAX_UNREADABLE_RESPONSES = 2;
+
+/** What the model is told after it invents a tool. Short: it has the list already. */
+const RETRY_AFTER_UNREADABLE = Prompt.make([
+  {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text: "Your last response named a tool that does not exist, so none of it could be run. Use only the tools you were given, with their exact names, and try again.",
+      },
+    ],
+  },
+]);
+
 export const runTurn = Effect.fn("t3agent/runTurn")(function* (input: RunTurnInput) {
   const limits = input.limits ?? DEFAULT_STEP_LIMITS;
   let prompt = input.prompt;
   let tally = EMPTY_TALLY;
   let usage = EMPTY_USAGE;
   const replies: Array<string> = [];
+  let unreadableResponses = 0;
 
   for (;;) {
-    const step = yield* runStep({
-      threadId: input.threadId,
-      turnId: input.turnId,
-      prompt,
-      toolkit: input.toolkit,
-      emitter: input.emitter,
-      stepIndex: tally.steps,
-      isInterrupted: input.isInterrupted,
-    });
+    const attempt = yield* Effect.result(
+      runStep({
+        threadId: input.threadId,
+        turnId: input.turnId,
+        prompt,
+        toolkit: input.toolkit,
+        emitter: input.emitter,
+        stepIndex: tally.steps,
+        isInterrupted: input.isInterrupted,
+      }),
+    );
+
+    if (attempt._tag === "Failure") {
+      // A response the toolkit cannot decode is nearly always one hallucinated
+      // tool name, and the whole turn used to die on it — the user got a wall
+      // of `Expected "read" at [2]["name"]` and lost everything the agent had
+      // already done. That is an ordinary mistake a model can correct once
+      // told, so tell it and let it try again.
+      //
+      // `AiError` is the outer tag and the specific kind lives on `cause`.
+      // Only this one is worth retrying: a network or auth failure nudged and
+      // repeated is just a slower failure.
+      const recoverable =
+        attempt.failure.cause._tag === "InvalidOutputError" &&
+        unreadableResponses < MAX_UNREADABLE_RESPONSES;
+      if (!recoverable) {
+        return yield* Effect.fail(attempt.failure);
+      }
+      unreadableResponses += 1;
+      prompt = Prompt.concat(prompt, RETRY_AFTER_UNREADABLE);
+      continue;
+    }
+
+    const step = attempt.success;
 
     // From the parts, not from the text we rendered: tool calls and results
     // must reach the next request exactly as the provider sent them.

@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as AiError from "effect/unstable/ai/AiError";
 import * as LanguageModel from "effect/unstable/ai/LanguageModel";
 import * as Prompt from "effect/unstable/ai/Prompt";
 import type * as Response from "effect/unstable/ai/Response";
@@ -65,6 +66,44 @@ function scriptedModel(steps: ReadonlyArray<ReadonlyArray<Response.StreamPartEnc
   );
 
   return { layer, seen, stepCount: () => index };
+}
+
+/**
+ * A model that fails to decode `failures` times, then replays the script.
+ *
+ * The real failure this stands in for is the model naming a tool that does not
+ * exist: the toolkit cannot decode the response and the whole step fails. It
+ * only happens against a misbehaving provider, so it is unreachable in a test
+ * without forging it.
+ */
+function unreadableThenScriptedModel(
+  failures: number,
+  steps: ReadonlyArray<ReadonlyArray<Response.StreamPartEncoded>>,
+) {
+  let index = 0;
+  const layer = Layer.effect(
+    LanguageModel.LanguageModel,
+    LanguageModel.make({
+      generateText: () => Effect.succeed([]),
+      streamText: () => {
+        const attempt = index;
+        index += 1;
+        if (attempt < failures) {
+          return Stream.fail(
+            new AiError.AiError({
+              module: "TestModel",
+              method: "streamText",
+              reason: new AiError.InvalidOutputError({
+                description: 'Expected "read" at [2]["name"]',
+              }),
+            }),
+          );
+        }
+        return Stream.fromArray(steps[Math.min(attempt - failures, steps.length - 1)] ?? []);
+      },
+    }),
+  );
+  return { layer, callCount: () => index };
 }
 
 const okTool = (name: string, reply: string): AgentTool =>
@@ -305,6 +344,68 @@ describe("runTurn", () => {
 
       expect(result.text).toBe("");
       expect(events.some((e) => e.kind.startsWith("message:"))).toBe(false);
+    }),
+  );
+});
+
+describe("a response the toolkit cannot read", () => {
+  const finishedTurn = [
+    [
+      { type: "text-start", id: "t" },
+      { type: "text-delta", id: "t", delta: "recovered" },
+      { type: "text-end", id: "t" },
+      usagePart(10, 5),
+    ] as ReadonlyArray<Response.StreamPartEncoded>,
+  ];
+
+  it.effect("nudges the model and carries on rather than losing the turn", () =>
+    Effect.gen(function* () {
+      // Before this, one hallucinated tool name killed the whole turn and the
+      // user saw a decode error with everything the agent had done discarded.
+      const model = unreadableThenScriptedModel(1, finishedTurn);
+      const { emitter } = recordingEmitter();
+      const toolkit = yield* buildToolkit([]);
+
+      const result = yield* runTurn({
+        threadId: THREAD,
+        turnId: TURN,
+        prompt: Prompt.make([{ role: "user", content: [{ type: "text", text: "go" }] }]),
+        model: "test-model",
+        contextWindow: 200_000,
+        toolkit,
+        emitter,
+        isInterrupted: () => false,
+      }).pipe(Effect.provide(model.layer));
+
+      expect(result.text).toBe("recovered");
+      // One failure plus one successful retry.
+      expect(model.callCount()).toBe(2);
+    }),
+  );
+
+  it.effect("gives up rather than retrying a model that will not converge", () =>
+    Effect.gen(function* () {
+      // Every retry is a paid request. A model producing garbage repeatedly
+      // should surface as a failure, not bill in a loop.
+      const model = unreadableThenScriptedModel(99, finishedTurn);
+      const { emitter } = recordingEmitter();
+      const toolkit = yield* buildToolkit([]);
+
+      const outcome = yield* Effect.result(
+        runTurn({
+          threadId: THREAD,
+          turnId: TURN,
+          prompt: Prompt.make([{ role: "user", content: [{ type: "text", text: "go" }] }]),
+          model: "test-model",
+          contextWindow: 200_000,
+          toolkit,
+          emitter,
+          isInterrupted: () => false,
+        }).pipe(Effect.provide(model.layer)),
+      );
+
+      expect(outcome._tag).toBe("Failure");
+      expect(model.callCount()).toBeLessThanOrEqual(4);
     }),
   );
 });
