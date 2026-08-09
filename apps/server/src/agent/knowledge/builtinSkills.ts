@@ -184,6 +184,75 @@ note when it happens. If the summary fails, the turn continues uncompacted rathe
 than failing.`,
   },
   {
+    name: "t3-choosing-an-agent",
+    description:
+      "Which coding agent and model to delegate a task to, and how hard to make it think. Use before delegate_to_agent, or when the user asks which agent or model is best for something.",
+    body: `# Choosing an agent
+
+Read this as a starting point, not a ranking. Two things below are facts you
+can check; the rest is a summary of how these tools were understood in
+**August 2026**, and model releases have been about six weeks apart. Where the
+call is close and the work is expensive, say what you would pick and why, then
+ask — a wrong routing decision costs the user real money and a whole run.
+
+## Check the facts first
+
+\`list_providers\` reports two things worth more than any general claim:
+
+**\`billing\`** — \`subscription\` means the user has already paid for that
+agent's capacity, so a delegation costs nothing extra. \`per-token\` means every
+delegation adds to a bill. When two agents would both do the job, this decides
+it, and it is the single most common reason to prefer one.
+
+**\`available\`** — an agent that is not authenticated or not installed is not a
+choice, however well suited it would be.
+
+Neither is guesswork. Prefer them over anything in the next section.
+
+## What each one is
+
+| Agent | What it is |
+| --- | --- |
+| **Codex** | OpenAI's CLI. Fast, decisive, token-efficient. Proceeds on reasonable assumptions rather than stopping to ask. |
+| **Claude** | Anthropic's CLI. Stronger on planning, ambiguity, and repository-scale work; larger default context. |
+| **Cursor** | Cursor's agent. Editor-native; useful where its own indexing helps. |
+| **Grok** | xAI's CLI. |
+| **OpenCode** | An aggregator — one CLI in front of many upstream models, so what it is good at depends on which model it is pointed at. |
+| **T3 Agent** | Yourself. You cannot delegate to another T3 Agent. |
+
+## Rough heuristics
+
+- **Ambiguous, design-heavy, or spanning many files** — Claude. Its advantage
+  is deciding *what* to do, and it is more willing to plan before acting.
+- **Well-specified and self-contained** — Codex. When the task already says
+  exactly what to change, its speed is the whole benefit and the planning
+  advantage is not in play.
+- **Second opinion on a hard call** — send the same question to two, then
+  report where they disagree. Disagreement is usually the interesting part.
+- **Mechanical and repetitive** — cheapest available agent at a low reasoning
+  level. Effort spent on a rename is effort wasted.
+
+## Reasoning effort
+
+\`delegate_to_agent\` takes \`reasoningEffort\`: \`none\` through \`max\`. It
+costs time and money roughly in proportion.
+
+- **none / minimal** — mechanical edits, renames, formatting, "apply this diff"
+- **low** — small well-specified changes
+- **medium** — ordinary feature work; a sensible default when unsure
+- **high** — debugging something you do not understand, design decisions
+- **xhigh / max** — genuinely hard problems where a wrong answer is expensive
+
+Raising effort on a task that was never hard buys nothing. Lowering it on a
+subtle bug wastes the whole delegation.
+
+## Say what you did
+
+After delegating, tell the user which agent and effort you chose and why —
+especially when it was \`per-token\`. They are paying for it, and a choice they
+can see is a choice they can correct.`,
+  },
+  {
     name: "t3-troubleshooting",
     description:
       "Diagnosing common T3 Code problems: unavailable providers, unauthenticated instances, missing models, failing turns. Use when something is not working and the cause is not obvious.",

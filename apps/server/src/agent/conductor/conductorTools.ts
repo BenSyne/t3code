@@ -24,6 +24,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Tool from "effect/unstable/ai/Tool";
 
+import { asReasoningEffort, REASONING_EFFORTS } from "../model/reasoning.ts";
 import { ToolFailure, toolFailure } from "../tools/failure.ts";
 import { defineTool, type AgentTool, type ToolContributor } from "../tools/registry.ts";
 import { checkApproval, checkTarget, type FleetPolicy } from "./fleet.ts";
@@ -46,7 +47,9 @@ const listProviders = (context: ConductorContext): AgentTool =>
   defineTool(
     Tool.make("list_providers", {
       description:
-        "List the coding agents available in T3 Code, so you can choose one to delegate to.",
+        "List the coding agents available in T3 Code, so you can choose one to delegate to. " +
+        "Read `billing` before choosing: 'subscription' means the user has already paid for " +
+        "that agent's capacity, 'per-token' means each delegation adds to a bill.",
       parameters: Schema.Struct({}),
       success: Schema.Struct({
         providers: Schema.Array(
@@ -55,6 +58,8 @@ const listProviders = (context: ConductorContext): AgentTool =>
             driverKind: Schema.String,
             displayName: Schema.String,
             available: Schema.Boolean,
+            defaultModel: Schema.NullOr(Schema.String),
+            billing: Schema.String,
           }),
         ),
       }),
@@ -68,6 +73,8 @@ const listProviders = (context: ConductorContext): AgentTool =>
           driverKind: provider.driverKind,
           displayName: provider.displayName,
           available: provider.available,
+          defaultModel: provider.defaultModel,
+          billing: provider.billing,
         })),
       })),
   );
@@ -117,6 +124,14 @@ const delegate = (context: ConductorContext): AgentTool =>
         model: Schema.optional(
           Schema.String.annotate({ description: "Leave unset to use the provider's default." }),
         ),
+        reasoningEffort: Schema.optional(
+          Schema.String.annotate({
+            description:
+              "How hard the other agent should think: none, minimal, low, medium, high, xhigh, or max. " +
+              "Leave unset for its default. Higher costs more and takes longer; raise it for design " +
+              "and debugging, lower it for mechanical work.",
+          }),
+        ),
       }),
       success: Schema.Struct({ threadId: Schema.String }),
       failure: ToolFailure,
@@ -146,6 +161,16 @@ const delegate = (context: ConductorContext): AgentTool =>
         return yield* toolFailure(verdict.reason);
       }
 
+      // Validated here rather than passed through: an effort the target does
+      // not accept is rejected by its provider at the first request, which the
+      // user sees as a delegation that failed for no visible reason.
+      const effort = asReasoningEffort(params.reasoningEffort);
+      if (params.reasoningEffort !== undefined && effort === undefined) {
+        return yield* toolFailure(
+          `"${params.reasoningEffort}" is not a reasoning level. Use one of: ${REASONING_EFFORTS.join(", ")}.`,
+        );
+      }
+
       const threadId = ThreadId.make(yield* context.nextId);
       const model = params.model ?? target.defaultModel;
       if (model === null) {
@@ -165,7 +190,14 @@ const delegate = (context: ConductorContext): AgentTool =>
         // the wrong field name until a real delegation failed with a decode
         // error the tool could only report as "unknown error". The casts are
         // gone; the schema checks these payloads now.
-        modelSelection: { instanceId: target.instanceId, model },
+        // `options` is the same per-model control surface the composer writes,
+        // so an effort chosen here reaches the other agent by exactly the path
+        // a person clicking the picker would have used.
+        modelSelection: {
+          instanceId: target.instanceId,
+          model,
+          ...(effort === undefined ? {} : { options: [{ id: "reasoningEffort", value: effort }] }),
+        },
         // Delegated work runs unattended by definition — nobody is watching it
         // to answer a prompt — so it runs in the mode that does not raise them.
         runtimeMode: "auto" satisfies RuntimeMode,

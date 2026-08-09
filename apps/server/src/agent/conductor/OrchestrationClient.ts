@@ -57,6 +57,16 @@ export interface ProviderSummary {
   readonly displayName: string;
   readonly available: boolean;
   readonly defaultModel: string | null;
+  /**
+   * Whether work sent here adds to a bill or draws on something already paid.
+   *
+   * The single most decision-relevant fact about a provider, and one the agent
+   * cannot infer from a name. A Codex instance on a ChatGPT subscription costs
+   * nothing extra per delegation; an instance holding an API key bills every
+   * token. Read from the instance's own auth rather than hardcoded per driver,
+   * because the same driver can be either depending on how it was set up.
+   */
+  readonly billing: "subscription" | "per-token" | "unknown";
 }
 
 export interface OrchestrationClient {
