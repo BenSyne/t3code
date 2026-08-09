@@ -305,6 +305,16 @@ choice, however well suited it would be.
 
 Neither is guesswork. Prefer them over anything in the next section.
 
+\`list_models\` reports the third: what a given agent can actually be pointed
+at, and which reasoning levels each of those models accepts.
+
+**Never name a model you have not seen in \`list_models\`, and never describe
+one you have not seen there.** Model lineups turn over every few weeks, so a
+slug you remember is as likely to be retired as current, and a slug that does
+not exist fails the delegation outright. Hedging is not the fix either: "use
+whatever your picker lists at the top" tells the user you did not look, when
+looking is one call. Either check, or say plainly that the default is fine.
+
 ## What each one is
 
 | Agent | What it is |
@@ -328,6 +338,43 @@ Neither is guesswork. Prefer them over anything in the next section.
 - **Mechanical and repetitive** — cheapest available agent at a low reasoning
   level. Effort spent on a rename is effort wasted.
 
+## Choosing a model within an agent
+
+Most of the time: **do not.** Leave \`model\` unset and the delegation uses the
+instance's default, which is whatever that agent's maintainers currently
+consider the right general choice. Overriding it is a claim that you know
+better about this specific task, and usually you do not.
+
+How to read what \`list_models\` gives you, without needing to know the
+lineup:
+
+- **\`isDefault\`** — the maintainers' pick. The burden of proof is on
+  anything else.
+- **\`isLegacy\`** — superseded and kept only so old threads keep working.
+  Never choose one for new work.
+- **\`vendor\`** — on an aggregator, who actually makes the model. Two entries
+  from the same vendor are usually one ladder; entries from different vendors
+  are different trade-offs.
+- **\`reasoningEfforts\`** — the levels that model advertises. A short list
+  means anything outside it will be refused. An empty list means the model
+  advertises none, so an effort passed with it may simply do nothing.
+
+Within one vendor's family, models are almost always a ladder: larger ones
+cost more per token, are slower, and are better at problems where the answer
+is not already implied by the question. Smaller ones are the opposite. Nothing
+in a slug tells you where on that ladder it sits — if it matters, ask the user
+rather than inferring from the name.
+
+**Effort usually matters more than tier.** A mid-tier model told to think hard
+will beat a top-tier one told not to, on most work that is sensitive to
+conventions or context. Reach for a bigger model when the task is genuinely
+hard to *reason about*; reach for more effort when it is merely easy to get
+subtly wrong. The second case is far more common.
+
+Two cases where overriding the default is actually right: the default's
+\`reasoningEfforts\` does not include the level the task needs, and the user
+has told you they prefer a particular model. Neither is a guess.
+
 ## Reasoning effort
 
 \`delegate_to_agent\` takes \`reasoningEffort\`: \`none\` through \`max\`. It
@@ -346,7 +393,9 @@ subtle bug wastes the whole delegation.
 
 After delegating, tell the user which agent and effort you chose and why —
 especially when it was \`per-token\`. They are paying for it, and a choice they
-can see is a choice they can correct.`,
+can see is a choice they can correct. If you left the model unset, say so
+rather than leaving it to be inferred; "Codex on its default at medium" is a
+decision, and "Codex" alone is not.`,
   },
   {
     name: "t3-troubleshooting",

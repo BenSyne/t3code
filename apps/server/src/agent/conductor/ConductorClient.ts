@@ -40,6 +40,7 @@ export const ConductorClientUnavailable = Layer.succeed(
     dispatch: () =>
       Effect.succeed({ accepted: false, detail: "Orchestration is not available here." }),
     listProviders: Effect.succeed([]),
+    listModels: () => Effect.succeed([]),
     listProjects: Effect.succeed([]),
     listThreads: () => Effect.succeed([]),
     getThread: () => Effect.succeed(undefined),

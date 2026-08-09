@@ -86,6 +86,33 @@ export interface ProviderSummary {
   readonly billing: "subscription" | "per-token" | "unknown";
 }
 
+/**
+ * One model an instance can actually be pointed at.
+ *
+ * The agent used to have no way to see this — `list_providers` reported a
+ * single default slug and nothing else — so asked which model to use it either
+ * guessed a name or hedged ("whatever your picker lists at the top"). Both are
+ * failures of the same kind: the answer was sitting in the provider snapshot
+ * the whole time.
+ */
+export interface ModelSummary {
+  readonly slug: string;
+  readonly name: string;
+  readonly isDefault: boolean;
+  /** Superseded but still selectable. Not a default choice. */
+  readonly isLegacy: boolean;
+  /** Who actually makes it, where the instance is an aggregator. */
+  readonly vendor: string | null;
+  /**
+   * The reasoning levels this specific model accepts.
+   *
+   * Per model, not per provider: a lineup usually mixes models that take the
+   * full range with ones that take none. Empty means the model exposes no
+   * reasoning control, so passing an effort to it is silently meaningless.
+   */
+  readonly reasoningEfforts: ReadonlyArray<string>;
+}
+
 export interface OrchestrationClient {
   /**
    * Dispatch a command exactly as a client would.
@@ -98,6 +125,14 @@ export interface OrchestrationClient {
   ) => Effect.Effect<{ readonly accepted: boolean; readonly detail?: string | undefined }>;
 
   readonly listProviders: Effect.Effect<ReadonlyArray<ProviderSummary>>;
+  /**
+   * The models one instance offers.
+   *
+   * Separate from `listProviders` rather than folded into it: a workspace with
+   * several instances of an aggregator has hundreds of models between them, and
+   * "who can I delegate to" should not pay for that every time it is asked.
+   */
+  readonly listModels: (instanceId: string) => Effect.Effect<ReadonlyArray<ModelSummary>>;
   readonly listProjects: Effect.Effect<ReadonlyArray<ProjectSummary>>;
   readonly listThreads: (projectId: string) => Effect.Effect<ReadonlyArray<ThreadSummary>>;
   /**

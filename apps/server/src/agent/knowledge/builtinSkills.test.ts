@@ -81,6 +81,37 @@ describe("the routing skill", () => {
     expect(body).toMatch(/then\s*\nask|then ask/);
   });
 
+  it("forbids naming a model it has not looked up", () => {
+    // The failure this exists for: asked which model to use, the agent either
+    // invented a plausible slug or hedged about what the user's picker showed.
+    // Both are the same mistake — answering from memory when one tool call
+    // would have given the real list.
+    expect(body).toContain("Never name a model you have not seen in");
+    expect(body).toContain("list_models");
+  });
+
+  it("names hedging as a failure, not a safe fallback", () => {
+    expect(body).toMatch(/Hedging is not the fix/);
+  });
+
+  it("tells the agent that leaving the model unset is usually right", () => {
+    // Overriding a maintainer's default is a claim to know better about a
+    // specific task. Left unsaid, a model with a list in front of it will pick
+    // from the list every time.
+    expect(body).toMatch(/Most of the time: \*\*do not\.\*\*/);
+  });
+
+  it("puts effort above model tier, since that is the call that pays off", () => {
+    expect(body).toContain("Effort usually matters more than tier");
+  });
+
+  it("refuses to rank models by name, which is what would go stale", () => {
+    // Deliberate: lineups turn over every few weeks, so the skill teaches how
+    // to read `list_models` rather than what any particular model is good at.
+    // A slug hardcoded here would be wrong within two releases.
+    expect(body).toMatch(/Nothing\s+in a slug tells you where on that ladder it sits/);
+  });
+
   it("names every effort level the delegation tool accepts", () => {
     for (const effort of ["none", "minimal", "low", "medium", "high", "xhigh", "max"]) {
       expect(body).toContain(effort);
