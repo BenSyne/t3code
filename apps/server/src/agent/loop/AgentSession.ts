@@ -70,11 +70,26 @@ export interface AgentSessionContext {
   /**
    * Set by `interruptTurn`, read by the loop between steps.
    *
-   * A flag rather than a fiber interrupt because a turn stopped mid-step leaves
-   * a tool call with no result in the history, and the next request fails on it.
-   * Stopping between steps always leaves the conversation well-formed.
+   * A flag rather than a fiber interrupt, so a stopped turn keeps the work it
+   * already finished: the loop notices between steps and returns the tool
+   * results and text it has, rather than throwing the step away.
+   *
+   * That is the right default and a bad only option. A step that never
+   * finishes — a provider holding a stream open, a model generating without
+   * end — never reaches the check, so Stop appears to do nothing and there is
+   * no way out. See `interruptRequests`.
    */
   interrupted: boolean;
+  /**
+   * How many times the user has asked for this turn to stop.
+   *
+   * Asking twice means "I do not care about a tidy ending, stop it", and the
+   * adapter interrupts the fiber on the second ask. Safe because the running
+   * step's parts are local to the loop and only reach the conversation when it
+   * returns normally — an abandoned step leaves the user's message with no
+   * reply, which is well-formed, rather than a tool call with no result.
+   */
+  interruptRequests: number;
   /** The turn in flight, if any. */
   running: Fiber.Fiber<void, never> | null;
 }
@@ -102,6 +117,7 @@ export function makeSessionContext(input: {
     usage: EMPTY_USAGE,
     stopped: false,
     interrupted: false,
+    interruptRequests: 0,
     running: null,
   };
 }

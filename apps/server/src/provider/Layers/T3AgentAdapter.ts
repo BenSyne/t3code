@@ -536,6 +536,9 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
       const threadId = input.threadId;
 
       context.interrupted = false;
+      // Reset with the flag: a stop pressed twice on a previous turn must not
+      // make the first press on this one immediately decisive.
+      context.interruptRequests = 0;
       activeTurns.set(threadId, turnId);
       setSessionStatus(context, "running", yield* nowIso);
       yield* events.turnStarted({ threadId, turnId, model: context.model });
@@ -587,11 +590,48 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
     capabilities: { sessionModelSwitch: "in-session" },
     startSession,
     sendTurn,
+    /**
+     * Stop the turn — politely the first time, decisively the second.
+     *
+     * The flag lets the loop finish the step it is on and keep the work that
+     * step produced, which is what you want when a turn is merely going the
+     * wrong way. But a step that never returns never reads the flag, so the
+     * first press could leave the user watching a spinner with nothing else to
+     * try. Asking again means they have stopped caring about a tidy ending.
+     *
+     * Abandoning the fiber is safe: the running step's parts are local to the
+     * loop and only join the conversation when it returns, so what is left
+     * behind is the user's message with no reply — well-formed, and the next
+     * turn continues from it.
+     */
     interruptTurn: Effect.fn("t3agent/interruptTurn")(function* (threadId) {
       const context = yield* store.require(threadId);
-      // A flag, not a fiber interrupt: stopping mid-step would leave a tool call
-      // with no result in the history and the next request would fail on it.
       context.interrupted = true;
+      context.interruptRequests += 1;
+
+      const running = context.running;
+      if (context.interruptRequests < 2 || running === null) {
+        return;
+      }
+
+      // Read before the delete below: this is the turn we are ending, and the
+      // completion event is dropped by the lifecycle guard without its id.
+      const turnId = activeTurns.get(threadId);
+      context.running = null;
+      // Denied first: a tool parked on an approval would otherwise keep the
+      // fiber alive past the interrupt, waiting on a person who has given up.
+      yield* gate.rejectAll;
+      yield* Fiber.interrupt(running);
+      setSessionStatus(context, "ready", yield* nowIso);
+      activeTurns.delete(threadId);
+      if (turnId !== undefined) {
+        yield* events.turnCompleted({
+          threadId,
+          turnId,
+          state: "interrupted",
+          errorMessage: "Stopped. The step in progress was abandoned.",
+        });
+      }
     }),
     respondToRequest: Effect.fn("t3agent/respondToRequest")(
       function* (threadId, requestId, decision) {
