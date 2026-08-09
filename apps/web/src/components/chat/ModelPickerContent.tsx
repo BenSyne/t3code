@@ -16,6 +16,7 @@ import {
   parseModelPickerModelKey,
 } from "./modelPickerKeys";
 import { isModelPickerNewModel } from "./modelPickerModelHighlights";
+import { instancesInRailGroup, railEntriesByDriver } from "./modelPickerRail";
 import { buildModelPickerSearchText, scoreModelPickerSearch } from "./modelPickerSearch";
 import {
   Combobox,
@@ -249,7 +250,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     return disabled;
   }, [instanceEntries, isLocked, matchesLockedProvider]);
   const sidebarInstanceEntries = useMemo(() => {
-    const enabledEntries = instanceEntries.filter(isProviderInstancePickerVisible);
+    // One icon per agent. Two instances of the same driver are the same agent
+    // with different models, and the list already says which is which.
+    const enabledEntries = railEntriesByDriver(
+      instanceEntries.filter(isProviderInstancePickerVisible),
+    );
     if (!isLocked) {
       return enabledEntries;
     }
@@ -348,27 +353,37 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         .map((rankedModel) => rankedModel.model);
     }
 
+    // A rail icon now stands for every instance of its driver, so the list
+    // shows the group rather than the one instance that represents it.
+    const railGroup =
+      selectedInstanceId === "favorites"
+        ? null
+        : instancesInRailGroup(instanceEntries, selectedInstanceId);
+
     if (props.lockedProvider !== null) {
       result = result.filter((m) => matchesLockedProvider(m));
-      if (selectedInstanceId === "favorites") {
+      if (railGroup === null) {
         result = result.filter((m) => favoritesSet.has(providerModelKey(m.instanceId, m.slug)));
       } else {
-        result = result.filter((m) => m.instanceId === selectedInstanceId);
+        result = result.filter((m) => railGroup.has(m.instanceId));
       }
-    } else if (selectedInstanceId === "favorites") {
+    } else if (railGroup === null) {
       result = result.filter((m) => favoritesSet.has(providerModelKey(m.instanceId, m.slug)));
     } else {
-      result = result.filter((m) => m.instanceId === selectedInstanceId);
+      result = result.filter((m) => railGroup.has(m.instanceId));
     }
 
     return sortProviderModelItems(result, {
       favoriteModelKeys: favoritesSet,
       groupFavorites: selectedInstanceId !== "favorites",
-      instanceOrder: selectedInstanceId === "favorites" ? instanceOrder : [],
+      // Keeps a grouped rail's models clustered by instance instead of
+      // interleaving two backends' lists into one alphabetical soup.
+      instanceOrder,
     });
   }, [
     favoritesSet,
     flatModels,
+    instanceEntries,
     instanceOrder,
     matchesLockedProvider,
     props.lockedProvider,
