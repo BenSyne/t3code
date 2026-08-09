@@ -8,6 +8,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ServerSettings,
   ServerSettingsPatch,
+  T3_AGENT_BACKEND_OPTIONS,
   T3AgentSettings,
 } from "./settings.ts";
 
@@ -306,9 +307,27 @@ describe("T3AgentSettings", () => {
     const settings = decodeT3AgentSettings({});
 
     expect(settings.enabled).toBe(true);
-    expect(settings.credentialEnvVar).toBe("ANTHROPIC_API_KEY");
+    // OpenRouter out of the box: one key reaches every model in the catalog,
+    // so the first-run path is a single signup rather than a decision about
+    // which vendor to commit to.
+    expect(settings.backend).toBe("openrouter");
+    expect(settings.credentialEnvVar).toBe("OPENROUTER_API_KEY");
     expect(settings.defaultModel).toBe("");
     expect(settings.customModels).toEqual([]);
+  });
+
+  it("ships able to run the user's other agents", () => {
+    // On by default: orchestrating the agents you already have is most of the
+    // point, and shipping it off mostly teaches people the feature is absent.
+    // The bounds that matter — fleet limit, no self-targeting, approvals off —
+    // are elsewhere and unaffected by this flag.
+    expect(decodeT3AgentSettings({}).orchestrateOtherAgents).toBe(true);
+  });
+
+  it("still lets it be turned off", () => {
+    expect(decodeT3AgentSettings({ orchestrateOtherAgents: false }).orchestrateOtherAgents).toBe(
+      false,
+    );
   });
 
   it("keeps the credential variable configurable", () => {
@@ -335,5 +354,30 @@ describe("T3AgentSettings", () => {
   it("rejects wrongly typed input", () => {
     expect(() => decodeT3AgentSettings({ credentialEnvVar: 123 })).toThrow();
     expect(() => decodeT3AgentSettings({ customModels: "not-an-array" })).toThrow();
+  });
+});
+
+const decodeT3AgentSettingsForOptions = Schema.decodeUnknownSync(T3AgentSettings);
+
+describe("T3 Agent backend options", () => {
+  it("offers a label for every backend the schema accepts, and no others", () => {
+    // The options are hand-written because the literals are wire values
+    // (`openai-compat`) and a person needs a name (`OpenAI-compatible`). This
+    // is what keeps the two honest: add a backend and forget the label and the
+    // build fails, rather than shipping a value nobody can select.
+    const offered = T3_AGENT_BACKEND_OPTIONS.map((option) => option.value).toSorted();
+    const accepted = ["anthropic", "cerebras", "openai", "openai-compat", "openrouter"];
+    expect(offered).toEqual(accepted);
+  });
+
+  it("offers the default first, so the obvious choice is the top one", () => {
+    expect(T3_AGENT_BACKEND_OPTIONS[0]?.value).toBe(decodeT3AgentSettingsForOptions({}).backend);
+  });
+
+  it("gives every option a human label rather than echoing the slug", () => {
+    for (const option of T3_AGENT_BACKEND_OPTIONS) {
+      expect(option.label.trim()).not.toBe("");
+      expect(option.label).not.toBe(option.value);
+    }
   });
 });
