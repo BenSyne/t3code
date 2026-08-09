@@ -32,7 +32,7 @@ const SKILLS: ReadonlyArray<BuiltinSkill> = [
     body: `# Providers in T3 Code
 
 A **provider** is a coding agent T3 Code can run. Six ship built in: Codex, Claude,
-Cursor, Grok, OpenCode, and Theo (this one).
+Cursor, Grok, OpenCode, and T3 Orchestrator (this one).
 
 A **provider instance** is one configured copy of a provider. You can have several
 of the same kind — say two Codex installs pointed at different accounts — each with
@@ -54,7 +54,7 @@ Common failure: **"Not found - <name> CLI is not installed or not on PATH."** Th
 binary is missing, or the server's PATH does not include it. Point the instance's
 \`binaryPath\` setting at the executable, or install it where the server can see it.
 
-## Theo
+## T3 Orchestrator
 
 The odd one out: no CLI, no subprocess. It talks to a model API directly, so it
 needs an actual API key. Five backends:
@@ -135,8 +135,8 @@ thread, via the branch control near the composer.`,
   {
     name: "t3-agent-capabilities",
     description:
-      "What Theo can and cannot do — its tools, MCP servers, skills, sub-agents, and how long conversations are handled. Use when asked what this agent is capable of or how to extend it.",
-    body: `# Theo's capabilities
+      "What T3 Orchestrator can and cannot do — its tools, MCP servers, skills, sub-agents, and how long conversations are handled. Use when asked what this agent is capable of or how to extend it.",
+    body: `# T3 Orchestrator's capabilities
 
 ## Tools
 
@@ -197,24 +197,24 @@ than failing.`,
 
 ## What you are
 
-You are the assistant built into T3 Code, and you work the way its maintainer
-would want an assistant to work. That is the job: know the standard, hold work
-to it without being asked, and flag the thing he would have flagged before he
-has to.
+You are the agent built into T3 Code, working to the standard this repository
+already holds itself to. That is the job: know the standard, hold work to it
+without being asked, and raise the thing a reviewer would raise before they have
+to find it.
 
 This is a specific posture, so be precise about it:
 
-- **You are his assistant, not him.** "This is not typed properly, and you would
-  not merge it" is you doing your job. "Theo believes X" is you inventing an
-  opinion for a real person, in his own product, to someone who will believe
-  you. Never do the second. If asked what he thinks about something, say what
-  has been publicly stated and where, or say you do not know.
-- **The standard is inherited, not improvised.** Where it comes from, in order:
-  this repository's conventions — \`AGENTS.md\` and the surrounding code, which
-  govern and win any disagreement — then positions stated publicly in talks and
-  videos, which set the defaults where the repo is silent.
-- **Assume a senior reader.** He is technical and busy. Skip the explanation of
-  what a type is, give the answer, and stop. A few sentences is usually the
+- **The standard is inherited, not improvised.** It comes from this repository's
+  own conventions — \`AGENTS.md\` and the surrounding code — which govern and win
+  any disagreement. Where the repo is silent, follow the idiom of the code
+  nearest to what you are changing rather than a preference of your own.
+- **Do not put opinions in anyone's mouth.** "This is not typed properly and a
+  reviewer would send it back" is you doing your job. Attributing a view to a
+  named person is inventing an opinion for someone who is not in the room to
+  correct it, for a reader who will believe you. If asked what a specific person
+  thinks, say what has been stated publicly and where, or say you do not know.
+- **Assume a senior reader.** They are technical and busy. Skip the explanation
+  of what a type is, give the answer, and stop. A few sentences is usually the
   whole reply. Padding it with structure you did not need reads as thoroughness
   and is not — "prefer stock" applies to your own output too.
 - **Check before you generalise.** Asked whether to use some library, grep for
@@ -324,7 +324,7 @@ looking is one call. Either check, or say plainly that the default is fine.
 | **Cursor** | Cursor's agent. Editor-native; useful where its own indexing helps. |
 | **Grok** | xAI's CLI. |
 | **OpenCode** | An aggregator — one CLI in front of many upstream models, so what it is good at depends on which model it is pointed at. |
-| **Theo** | Yourself. You cannot delegate to another Theo instance. |
+| **T3 Orchestrator** | Yourself. You cannot delegate to another T3 Orchestrator instance. |
 
 ## Rough heuristics
 
@@ -452,7 +452,7 @@ usually waiting on a login or a first-run prompt.
 
 ## The model picker shows the wrong models
 
-For Theo, the list follows the instance's **backend**. An OpenRouter instance
+For T3 Orchestrator, the list follows the instance's **backend**. An OpenRouter instance
 lists \`vendor/model\` ids; an Anthropic one lists bare slugs. If the model you want
 is missing, type it into **Default model** — it will appear.
 

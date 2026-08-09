@@ -225,5 +225,5 @@ export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>>
   [CURSOR_DRIVER_KIND]: "Cursor",
   [GROK_DRIVER_KIND]: "Grok",
   [OPENCODE_DRIVER_KIND]: "OpenCode",
-  [T3AGENT_DRIVER_KIND]: "Theo",
+  [T3AGENT_DRIVER_KIND]: "T3 Orchestrator",
 };

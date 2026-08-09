@@ -1,11 +1,11 @@
-# Theo
+# T3 Orchestrator
 
-Theo is the coding agent built into T3 Code. Unlike the other providers, there is nothing to
+T3 Orchestrator is the coding agent built into T3 Code. Unlike the other providers, there is nothing to
 install — you give it an API key and it works.
 
 ## Setting it up
 
-1. Open **Settings → Providers** and add a **Theo** instance.
+1. Open **Settings → Providers** and add a **T3 Orchestrator** instance.
 2. Choose a **Provider**: Anthropic, OpenAI, OpenRouter, Cerebras, or OpenAI-compatible.
 3. Set the **API key variable** to the name of an environment variable — `ANTHROPIC_API_KEY`,
    `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, whatever you like.
@@ -15,7 +15,7 @@ install — you give it an API key and it works.
    everywhere it would otherwise be displayed or logged.
 5. Pick a **Default model**, or leave it blank for the provider's default.
 
-That is the whole setup. Start a thread and pick Theo from the model picker.
+That is the whole setup. Start a thread and pick T3 Orchestrator from the model picker.
 
 ### How hard it thinks
 
@@ -67,7 +67,7 @@ a long search from filling the main conversation.
 
 ## Running your other agents
 
-Theo can drive the rest of T3 Code on your behalf: start work on Codex, Claude, Cursor, Grok or
+T3 Orchestrator can drive the rest of T3 Code on your behalf: start work on Codex, Claude, Cursor, Grok or
 OpenCode, follow it, and tidy up after it. This is on out of the box.
 
 Worth knowing what that spends. A delegation runs on whatever key the _target_ provider holds — for
@@ -103,13 +103,13 @@ is the one action with no undo behind it. And it cannot change another thread's 
 it can never widen what some other agent is allowed to do.
 
 Answering **approval prompts** on your behalf is separate, off, and behind its own setting. Approval
-is how you stay in the loop; leaving it off means Theo tells you what is waiting instead of deciding
-for you. Answering a _question_ a thread asked is different and allowed, but only on threads Theo
+is how you stay in the loop; leaving it off means T3 Orchestrator tells you what is waiting instead of deciding
+for you. Answering a _question_ a thread asked is different and allowed, but only on threads T3 Orchestrator
 started itself — it will not put words in your mouth in a conversation it was never part of.
 
 There is no cap on how many delegations run at once — swarming is the point — so a large fan-out
 spends a large amount at once on whatever keys those providers use. It can never delegate to another
-Theo instance, though: an agent that can start copies of itself is unbounded recursion rather than a
+T3 Orchestrator instance, though: an agent that can start copies of itself is unbounded recursion rather than a
 wide fan-out, and that one does not stop.
 
 ## Permissions
@@ -141,7 +141,7 @@ Conversations are written to disk, so a thread survives restarting T3 Code.
 ## About your API key
 
 Worth being explicit, because this differs from the other providers. Codex, Claude, and the rest log
-in through their own CLI and T3 Code never sees a raw key. Theo talks to the model API itself,
+in through their own CLI and T3 Code never sees a raw key. T3 Orchestrator talks to the model API itself,
 so it needs the actual key.
 
 The key is stored in T3 Code's secret store with owner-only file permissions, never written to

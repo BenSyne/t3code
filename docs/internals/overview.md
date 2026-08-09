@@ -25,8 +25,8 @@ there, never in the client.
 ┌──────────────────▼─────────────────────────────┐
 │ Agent CLIs: Codex, Claude, Cursor, Grok,       │
 │ OpenCode                                       │
-│ ── plus Theo, which runs in-process and        │
-│    talks to a model API directly               │
+│ ── plus T3 Orchestrator, which runs in-process │
+│    and talks to a model API directly           │
 └────────────────────────────────────────────────┘
 ```
 

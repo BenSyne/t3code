@@ -31,22 +31,24 @@ describe("the house style skill", () => {
   const house = BUILTIN_SKILLS.find((skill) => skill.name === "t3-house-style");
   const body = house?.body ?? "";
 
-  it("frames the agent as an assistant rather than as the person", () => {
-    // The distinction the whole skill turns on. Holding work to someone's
-    // standard is the job; inventing opinions for a real person, inside that
-    // person's own product, is the failure.
-    expect(body).toContain("his assistant, not him");
+  it("names no person as the source of the standard", () => {
+    // The skill used to tell the agent to work the way a specific, named
+    // maintainer would want. Holding work to a high standard is the job;
+    // sourcing that standard from a real person means every judgement it makes
+    // is implicitly attributed to someone who never agreed to it.
+    expect(body).not.toMatch(/\bTheo\b/);
+    expect(body).toMatch(/this repository/i);
   });
 
   it("forbids inventing a position and offers what to say instead", () => {
-    expect(body).toContain("Never do the second");
-    expect(body).toMatch(/publicly stated.*or say you do not know/s);
+    expect(body).toContain("Do not put opinions in anyone's mouth");
+    expect(body).toMatch(/stated publicly.*or say you do not know/s);
   });
 
   it("puts the repository above any inherited opinion", () => {
     // Conventions in the code are checkable and current; a remembered talk is
     // neither. When they disagree the code has to win.
-    expect(body).toMatch(/govern and win any disagreement/);
+    expect(body).toMatch(/govern and win\s+any disagreement/);
   });
 
   it("requires disclosing work it would not sign off on", () => {
