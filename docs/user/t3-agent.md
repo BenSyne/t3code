@@ -9,9 +9,10 @@ install — you give it an API key and it works.
 2. Choose a **Provider**: Anthropic, OpenAI, OpenRouter, or OpenAI-compatible.
 3. Set the **API key variable** to the name of an environment variable — `ANTHROPIC_API_KEY`,
    `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, whatever you like.
-4. Set that variable's **value** in the instance environment below the field. It is stored in T3
-   Code's secret store, not in `settings.json`, and is redacted everywhere it would otherwise be
-   displayed or logged.
+4. In the **Environment variables** section — just above the config fields — click **Add**, enter
+   that variable's name and your key as its value, and tick **sensitive**. Ticking it is what
+   routes the value to T3 Code's secret store instead of `settings.json`, and keeps it redacted
+   everywhere it would otherwise be displayed or logged.
 5. Pick a **Default model**, or leave it blank for the provider's default.
 
 That is the whole setup. Start a thread and pick T3 Agent from the model picker.
