@@ -8,6 +8,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ServerSettings,
   ServerSettingsPatch,
+  T3AgentSettings,
 } from "./settings.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
@@ -295,5 +296,44 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.addProjectBaseDirectory).toBe("~/Development");
     expect(encoded.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
+  });
+});
+
+describe("T3AgentSettings", () => {
+  const decodeT3AgentSettings = Schema.decodeUnknownSync(T3AgentSettings);
+
+  it("defaults an unconfigured instance to a usable state", () => {
+    const settings = decodeT3AgentSettings({});
+
+    expect(settings.enabled).toBe(true);
+    expect(settings.credentialEnvVar).toBe("ANTHROPIC_API_KEY");
+    expect(settings.defaultModel).toBe("");
+    expect(settings.customModels).toEqual([]);
+  });
+
+  it("keeps the credential variable configurable", () => {
+    const settings = decodeT3AgentSettings({ credentialEnvVar: "  MY_KEY  " });
+
+    expect(settings.credentialEnvVar).toBe("MY_KEY");
+  });
+
+  it("has no field that would persist a secret to settings.json", () => {
+    // The API key belongs in the instance environment with `sensitive: true`,
+    // which is stripped from settings.json and redacted on the wire. A field
+    // here would write the user's key to disk in plain text.
+    const fields = Object.keys(T3AgentSettings.fields);
+
+    expect(fields).not.toContain("apiKey");
+    expect(fields).not.toContain("credential");
+    expect(fields.some((field) => /key|secret|token|password/i.test(field))).toBe(false);
+  });
+
+  it("declares no binaryPath, because the agent is compiled in", () => {
+    expect(Object.keys(T3AgentSettings.fields)).not.toContain("binaryPath");
+  });
+
+  it("rejects wrongly typed input", () => {
+    expect(() => decodeT3AgentSettings({ credentialEnvVar: 123 })).toThrow();
+    expect(() => decodeT3AgentSettings({ customModels: "not-an-array" })).toThrow();
   });
 });
