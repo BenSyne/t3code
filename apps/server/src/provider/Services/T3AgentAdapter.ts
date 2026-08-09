@@ -32,6 +32,8 @@ export interface T3AgentAdapterOptions {
   readonly contextWindowFor: (model: string) => number | null;
   /** Rules the user set, evaluated after the mode default. */
   readonly permissionRules: ReadonlyArray<PermissionRule>;
+  /** Where conversations are written so they survive a restart. */
+  readonly transcriptDirectory: string;
 }
 
 /**

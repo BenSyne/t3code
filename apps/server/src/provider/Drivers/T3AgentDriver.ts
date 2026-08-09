@@ -20,7 +20,11 @@ import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodePath from "node:path";
+
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
+import * as ServerConfig from "../../config.ts";
 import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
 import { resolveCredential } from "../../agent/model/credentials.ts";
 import { contextWindowFor } from "../../agent/model/ModelCatalog.ts";
@@ -49,6 +53,7 @@ const decodeT3AgentSettings = Schema.decodeSync(T3AgentSettings);
 
 export type T3AgentDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
+  | ServerConfig.ServerConfig
   | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
   | FileSystem.FileSystem
@@ -66,6 +71,7 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
       const instanceEnv = mergeProviderInstanceEnvironment(environment);
 
       const backend = config.backend;
@@ -140,6 +146,14 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
         commandEnv: instanceEnv as Record<string, string>,
         contextWindowFor: (model) => contextWindowFor(backend, model),
         permissionRules: [],
+        // Per instance, so two instances in the same project keep separate
+        // conversations rather than reading each other's history.
+        transcriptDirectory: NodePath.join(
+          serverConfig.stateDir,
+          "agent",
+          "transcripts",
+          instanceId,
+        ),
         ...(baseUrl === undefined ? {} : { baseUrl }),
       });
 
