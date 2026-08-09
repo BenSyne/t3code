@@ -25,32 +25,49 @@ describe("enabledServers", () => {
   });
 });
 
+/** The catalogue, or a failure if the envelope did not decode. */
+const toolsOf = (result: unknown) => {
+  const outcome = parseToolList(result);
+  if (outcome._tag === "Unreadable") {
+    throw new Error(`expected tools, got Unreadable: ${outcome.reason}`);
+  }
+  return outcome.tools;
+};
+
 describe("parseToolList", () => {
   it("reads a well-formed list", () => {
-    const tools = parseToolList({
-      tools: [{ name: "search", description: "searches", inputSchema: { type: "object" } }],
-    });
-    expect(tools).toEqual([
-      { name: "search", description: "searches", inputSchema: { type: "object" } },
-    ]);
+    expect(
+      toolsOf({
+        tools: [{ name: "search", description: "searches", inputSchema: { type: "object" } }],
+      }),
+    ).toEqual([{ name: "search", description: "searches", inputSchema: { type: "object" } }]);
   });
 
   it("drops a malformed entry without losing the rest", () => {
     // One bad tool must not cost the user every other tool on that server.
-    const tools = parseToolList({
-      tools: [null, { description: "no name" }, { name: "good" }, 42],
+    const tools = toolsOf({
+      tools: [null, { description: "no name" }, { name: "good", inputSchema: {} }, 42],
     });
     expect(tools.map((tool) => tool.name)).toEqual(["good"]);
   });
 
   it("falls back to the name when a description is missing", () => {
-    expect(parseToolList({ tools: [{ name: "solo" }] })[0]?.description).toBe("solo");
+    expect(toolsOf({ tools: [{ name: "solo", inputSchema: {} }] })[0]?.description).toBe("solo");
   });
 
-  it("returns nothing for a result that is not a list", () => {
-    expect(parseToolList({})).toEqual([]);
-    expect(parseToolList(null)).toEqual([]);
-    expect(parseToolList({ tools: "nope" })).toEqual([]);
+  it("reports an unreadable envelope rather than an empty catalogue", () => {
+    // The distinction this whole shape exists for. A server we cannot parse is
+    // not a server offering no tools, and reporting it as the latter is how a
+    // broken connection comes to look like a working one.
+    for (const bad of [{}, null, { tools: "nope" }, "garbage"]) {
+      expect(parseToolList(bad)._tag).toBe("Unreadable");
+    }
+  });
+
+  it("still reports an empty catalogue as tools, not as a failure", () => {
+    // A server legitimately offering nothing is well-formed and must not be
+    // mistaken for a broken one.
+    expect(parseToolList({ tools: [] })).toEqual({ _tag: "Tools", tools: [] });
   });
 });
 
@@ -78,8 +95,36 @@ describe("renderToolResult", () => {
     expect(renderToolResult({ content: [], isError: true }).isError).toBe(true);
   });
 
-  it("survives a result with no content at all", () => {
-    expect(renderToolResult({})).toEqual({ text: "", isError: false });
+  it("keeps the good blocks when one is malformed", () => {
+    // Caught by this test failing during the schema rework: decoding the whole
+    // result strictly meant an image missing its mimeType discarded the text
+    // blocks either side of it, and the model was told the tool was unreadable
+    // when nearly all of it was fine.
+    const rendered = renderToolResult({
+      content: [
+        { type: "text", text: "before" },
+        { type: "image", data: "iVBORw0KGgo=" },
+        { type: "text", text: "after" },
+      ],
+    });
+    expect(rendered.text).toBe("before\n[image content]\nafter");
+    expect(rendered.isError).toBe(false);
+  });
+
+  it("names a block with no recognisable type at all", () => {
+    expect(renderToolResult({ content: [{ nonsense: true }] }).text).toBe("[unknown content]");
+  });
+
+  it("treats a result it cannot read as an error, not as silence", () => {
+    // A tool that answered with nothing and a tool that answered with nonsense
+    // call for different reactions from the model.
+    const rendered = renderToolResult({ nonsense: true });
+    expect(rendered.isError).toBe(true);
+    expect(rendered.text).toContain("could not read");
+  });
+
+  it("reads an empty content list as genuinely empty output", () => {
+    expect(renderToolResult({ content: [] })).toEqual({ text: "", isError: false });
   });
 });
 
