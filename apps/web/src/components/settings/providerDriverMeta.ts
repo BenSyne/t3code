@@ -78,7 +78,7 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
   },
   {
     value: ProviderDriverKind.make("t3agent"),
-    label: "Theo",
+    label: "T3 Orchestrator",
     icon: T3AgentIcon,
     badgeLabel: "Beta",
     settingsSchema: T3AgentSettings,

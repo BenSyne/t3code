@@ -498,7 +498,7 @@ export type OpenCodeSettings = typeof OpenCodeSettings.Type;
  * the user's key to disk in plain text.
  */
 /**
- * The backends a Theo instance can point at, in the order they are offered.
+ * The backends a T3 Orchestrator instance can point at, in the order they are offered.
  *
  * OpenRouter first because it is the default and the easiest starting point;
  * OpenAI-compatible last because it is the escape hatch, and it is the only

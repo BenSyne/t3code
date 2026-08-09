@@ -99,7 +99,7 @@ export type T3AgentDriverEnv =
 export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = {
   driverKind: T3AGENT_DRIVER_KIND,
   metadata: {
-    displayName: "Theo",
+    displayName: "T3 Orchestrator",
     supportsMultipleInstances: true,
   },
   configSchema: T3AgentSettings,
