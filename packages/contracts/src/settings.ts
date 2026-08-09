@@ -561,6 +561,11 @@ export const T3AgentSettings = makeProviderSettingsSchema(
         title: "Let this agent run other agents",
         description:
           "Allows delegating work to Codex, Claude, Cursor, Grok, or OpenCode and reading the results. Delegated threads appear in the sidebar and can be interrupted or reverted like any other. Uses those providers' own credits.",
+        // The form does not infer a control from the schema type — without
+        // this a boolean renders as a text box you cannot meaningfully type
+        // into. `persist` because the value the user chose is the point: an
+        // omitted `false` is indistinguishable from never having decided.
+        providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
       }),
     ),
   },
