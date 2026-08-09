@@ -30,6 +30,7 @@ catalog:
   "@clerk/expo": 4.2.0
   "@clerk/react": 6.12.10
   "@clerk/shared": 4.25.10
+  "@effect/ai-anthropic": 4.0.0-beta.103
   "@effect/atom-react": 4.0.0-beta.103
   "@effect/openapi-generator": 4.0.0-beta.103
   "@effect/platform-bun": 4.0.0-beta.103
@@ -64,6 +65,7 @@ minimumReleaseAgeExclude:
   - "@distilled.cloud/core@0.30.2"
   - "@distilled.cloud/neon@0.30.2"
   - "@distilled.cloud/planetscale@0.30.2"
+  - "@effect/ai-anthropic@4.0.0-beta.103"
   - "@effect/atom-react@4.0.0-beta.103"
   - "@effect/openapi-generator@4.0.0-beta.103"
   - "@effect/platform-bun@4.0.0-beta.103"
@@ -89,6 +91,7 @@ overrides:
   "@clerk/expo": "catalog:"
   "@clerk/react": "catalog:"
   "@clerk/shared": "catalog:"
+  "@effect/ai-anthropic": "catalog:"
   "@effect/atom-react": "catalog:"
   "@effect/platform-bun": "catalog:"
   "@effect/platform-node": "catalog:"
