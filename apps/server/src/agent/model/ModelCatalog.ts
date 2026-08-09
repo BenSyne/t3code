@@ -13,6 +13,7 @@
  *
  * @module agent/model/ModelCatalog
  */
+import type { ReasoningEffort } from "./reasoning.ts";
 import type { BackendKind } from "./resolveLanguageModel.ts";
 
 export interface CatalogModel {
@@ -20,7 +21,31 @@ export interface CatalogModel {
   readonly id: string;
   readonly label: string;
   readonly contextWindow: number;
+  /**
+   * The efforts this model honours, weakest first, or absent for a model that
+   * does not reason (or that we cannot vouch for). Absent means no picker: the
+   * control only offers what we know the API will accept.
+   */
+  readonly reasoningEfforts?: ReadonlyArray<ReasoningEffort>;
 }
+
+/**
+ * Effort subsets by backend family, named for why they differ.
+ *
+ * Anthropic's adaptive thinking has three levels plus off. OpenAI adds
+ * `minimal` and `xhigh` at the extremes. OpenRouter translates the common
+ * levels for whatever is upstream, so its models share one conservative set.
+ */
+const ANTHROPIC_EFFORTS: ReadonlyArray<ReasoningEffort> = ["none", "low", "medium", "high"];
+const OPENAI_EFFORTS: ReadonlyArray<ReasoningEffort> = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+];
+const OPENROUTER_EFFORTS: ReadonlyArray<ReasoningEffort> = ["none", "low", "medium", "high"];
 
 /**
  * Known models per backend, best-first.
@@ -30,22 +55,78 @@ export interface CatalogModel {
  */
 export const KNOWN_MODELS: Record<BackendKind, ReadonlyArray<CatalogModel>> = {
   anthropic: [
-    { id: "claude-opus-5", label: "Claude Opus 5", contextWindow: 200_000 },
-    { id: "claude-sonnet-5", label: "Claude Sonnet 5", contextWindow: 200_000 },
-    { id: "claude-haiku-4-5", label: "Claude Haiku 4.5", contextWindow: 200_000 },
+    {
+      id: "claude-opus-5",
+      label: "Claude Opus 5",
+      contextWindow: 200_000,
+      reasoningEfforts: ANTHROPIC_EFFORTS,
+    },
+    {
+      id: "claude-sonnet-5",
+      label: "Claude Sonnet 5",
+      contextWindow: 200_000,
+      reasoningEfforts: ANTHROPIC_EFFORTS,
+    },
+    {
+      id: "claude-haiku-4-5",
+      label: "Claude Haiku 4.5",
+      contextWindow: 200_000,
+      reasoningEfforts: ANTHROPIC_EFFORTS,
+    },
   ],
   openai: [
-    { id: "gpt-5.1", label: "GPT-5.1", contextWindow: 400_000 },
-    { id: "gpt-5.1-mini", label: "GPT-5.1 mini", contextWindow: 400_000 },
-    { id: "o4-mini", label: "o4-mini", contextWindow: 200_000 },
+    { id: "gpt-5.1", label: "GPT-5.1", contextWindow: 400_000, reasoningEfforts: OPENAI_EFFORTS },
+    {
+      id: "gpt-5.1-mini",
+      label: "GPT-5.1 mini",
+      contextWindow: 400_000,
+      reasoningEfforts: OPENAI_EFFORTS,
+    },
+    {
+      id: "o4-mini",
+      label: "o4-mini",
+      contextWindow: 200_000,
+      // Always reasons; "none" is not something the API accepts for it.
+      reasoningEfforts: ["low", "medium", "high"],
+    },
   ],
   openrouter: [
-    { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5", contextWindow: 200_000 },
-    { id: "openai/gpt-5.1", label: "GPT-5.1", contextWindow: 400_000 },
-    { id: "google/gemini-3-pro", label: "Gemini 3 Pro", contextWindow: 1_048_576 },
-    { id: "moonshotai/kimi-k3", label: "Kimi K3", contextWindow: 1_048_576 },
-    { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", contextWindow: 1_048_576 },
-    { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro", contextWindow: 1_048_576 },
+    {
+      id: "anthropic/claude-sonnet-5",
+      label: "Claude Sonnet 5",
+      contextWindow: 200_000,
+      reasoningEfforts: OPENROUTER_EFFORTS,
+    },
+    {
+      id: "openai/gpt-5.1",
+      label: "GPT-5.1",
+      contextWindow: 400_000,
+      reasoningEfforts: OPENAI_EFFORTS,
+    },
+    {
+      id: "google/gemini-3-pro",
+      label: "Gemini 3 Pro",
+      contextWindow: 1_048_576,
+      reasoningEfforts: OPENROUTER_EFFORTS,
+    },
+    {
+      id: "moonshotai/kimi-k3",
+      label: "Kimi K3",
+      contextWindow: 1_048_576,
+      reasoningEfforts: OPENROUTER_EFFORTS,
+    },
+    {
+      id: "deepseek/deepseek-v4-flash",
+      label: "DeepSeek V4 Flash",
+      contextWindow: 1_048_576,
+      reasoningEfforts: OPENROUTER_EFFORTS,
+    },
+    {
+      id: "deepseek/deepseek-v4-pro",
+      label: "DeepSeek V4 Pro",
+      contextWindow: 1_048_576,
+      reasoningEfforts: OPENROUTER_EFFORTS,
+    },
   ],
   "openai-compat": [],
 };

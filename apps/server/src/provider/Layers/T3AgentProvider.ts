@@ -13,6 +13,7 @@
  * @module provider/Layers/T3AgentProvider
  */
 import type {
+  ModelCapabilities,
   ServerProviderAuth,
   ServerProviderModel,
   ServerProviderState,
@@ -21,8 +22,9 @@ import type {
 import { DEFAULT_MODEL_BY_PROVIDER } from "@t3tools/contracts";
 
 import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
-import { KNOWN_MODELS } from "../../agent/model/ModelCatalog.ts";
+import { KNOWN_MODELS, type CatalogModel } from "../../agent/model/ModelCatalog.ts";
 import type { ResolvedCredential } from "../../agent/model/credentials.ts";
+import { REASONING_DEFAULT_CHOICE, REASONING_EFFORT_LABELS } from "../../agent/model/reasoning.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 
 /**
@@ -43,6 +45,40 @@ export function defaultModelFor(settings: T3AgentSettings): string {
 }
 
 /**
+ * The reasoning picker for one model, or null for a model that does not reason.
+ *
+ * "Default" is a real choice, listed first and selected out of the box. It
+ * means "send nothing" — and that is spelled out to the user, because the
+ * backends genuinely differ on what nothing means: an Anthropic model will not
+ * think, an OpenAI reasoning model will anyway. A control that implied one
+ * uniform behaviour would be lying on somebody's instance.
+ */
+function reasoningCapabilities(model: CatalogModel): ModelCapabilities | null {
+  const efforts = model.reasoningEfforts;
+  if (efforts === undefined || efforts.length === 0) {
+    return null;
+  }
+  return {
+    optionDescriptors: [
+      {
+        id: "reasoningEffort",
+        label: "Reasoning",
+        type: "select",
+        options: [
+          {
+            id: REASONING_DEFAULT_CHOICE,
+            label: "Default",
+            description: "Let the provider decide. Nothing extra is sent.",
+            isDefault: true,
+          },
+          ...efforts.map((effort) => ({ id: effort, label: REASONING_EFFORT_LABELS[effort] })),
+        ],
+      },
+    ],
+  };
+}
+
+/**
  * What the model picker offers for this instance.
  *
  * Keyed by the chosen backend: an OpenRouter instance must not advertise bare
@@ -60,7 +96,7 @@ function buildModels(settings: T3AgentSettings): ReadonlyArray<ServerProviderMod
     name: model.label,
     isCustom: false,
     isDefault: model.id === preferred,
-    capabilities: null,
+    capabilities: reasoningCapabilities(model),
   }));
 
   const seen = new Set(known.map((model) => model.slug));

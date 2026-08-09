@@ -20,6 +20,7 @@ import type * as LanguageModel from "effect/unstable/ai/LanguageModel";
 import type * as Prompt from "effect/unstable/ai/Prompt";
 
 import { EMPTY_USAGE, type UsageTally } from "../events/usage.ts";
+import type { ReasoningEffort } from "../model/reasoning.ts";
 import type { AgentToolkit } from "../tools/registry.ts";
 
 /** A finished turn, with what it takes to undo it. */
@@ -38,18 +39,28 @@ export interface CompletedTurn {
 export interface AgentSessionContext {
   /** The wire-visible record. Replaced in place as status changes. */
   session: ProviderSession;
-  readonly model: string;
+  /**
+   * Mutable, together with the three fields below, because this adapter
+   * advertises in-session model switching: T3 Code deliberately keeps the
+   * session alive across a model change and trusts the next turn to honour
+   * the new selection. Swap them only through `applyModelChoice`, which keeps
+   * the four consistent — a layer built for one model under another's name
+   * would misreport cost and context for every following turn.
+   */
+  model: string;
+  /** How hard the model is asked to think, or undefined for its own default. */
+  reasoningEffort: ReasoningEffort | undefined;
   /**
    * A ready-to-use model. `HttpClient` is provided once when the session is
    * created, not per turn, so running a turn requires nothing further — which
    * is what lets the loop be tested against a stub with no transport at all.
    */
-  readonly modelLayer: Layer.Layer<LanguageModel.LanguageModel>;
+  modelLayer: Layer.Layer<LanguageModel.LanguageModel>;
   /** Absolute path every tool in this session is confined to. */
   readonly workspaceRoot: string;
   readonly toolkit: AgentToolkit;
   /** For the usage meter's denominator. Null when the model's window is unknown. */
-  readonly contextWindow: number | null;
+  contextWindow: number | null;
   /** Conversation so far. Replaced wholesale each turn; never mutated. */
   prompt: Prompt.Prompt;
   turns: Array<CompletedTurn>;
@@ -71,6 +82,7 @@ export interface AgentSessionContext {
 export function makeSessionContext(input: {
   readonly session: ProviderSession;
   readonly model: string;
+  readonly reasoningEffort?: ReasoningEffort | undefined;
   readonly modelLayer: Layer.Layer<LanguageModel.LanguageModel>;
   readonly workspaceRoot: string;
   readonly toolkit: AgentToolkit;
@@ -80,6 +92,7 @@ export function makeSessionContext(input: {
   return {
     session: input.session,
     model: input.model,
+    reasoningEffort: input.reasoningEffort,
     modelLayer: input.modelLayer,
     workspaceRoot: input.workspaceRoot,
     toolkit: input.toolkit,
@@ -91,6 +104,35 @@ export function makeSessionContext(input: {
     interrupted: false,
     running: null,
   };
+}
+
+/** What a mid-session model change swaps in. Built by the adapter, applied here. */
+export interface ModelChoice {
+  readonly model: string;
+  readonly reasoningEffort: ReasoningEffort | undefined;
+  readonly modelLayer: Layer.Layer<LanguageModel.LanguageModel>;
+  readonly contextWindow: number | null;
+}
+
+/**
+ * Switch what the session talks to, atomically from the loop's point of view.
+ *
+ * Called between turns, never during one — the running turn holds its own
+ * references. The wire-visible record is updated too, because the orchestrator
+ * compares `session.model` against the requested selection to decide whether a
+ * change happened; leaving it stale would make it restart sessions this
+ * adapter is built to keep.
+ */
+export function applyModelChoice(
+  context: AgentSessionContext,
+  choice: ModelChoice,
+  updatedAt: string,
+): void {
+  context.model = choice.model;
+  context.reasoningEffort = choice.reasoningEffort;
+  context.modelLayer = choice.modelLayer;
+  context.contextWindow = choice.contextWindow;
+  context.session = { ...context.session, model: choice.model, updatedAt };
 }
 
 /** Mark a session closed. Idempotent: the second call is a no-op. */

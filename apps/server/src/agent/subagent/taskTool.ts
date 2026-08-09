@@ -72,7 +72,11 @@ export interface SubagentContext {
    * as a "cannot access before initialization" on the first turn.
    */
   readonly systemPrompt: () => string;
-  readonly contextWindow: number | null;
+  /**
+   * Read when the tool runs, like the model layer below: it must describe the
+   * model the parent is using *now*, not the one it started with.
+   */
+  readonly contextWindow: () => number | null;
   /**
    * Build the child's tools at the given depth.
    *
@@ -80,8 +84,13 @@ export interface SubagentContext {
    * parent's: at the cap it must not contain `task`.
    */
   readonly toolkitForDepth: (depth: number) => Effect.Effect<AgentToolkit>;
-  /** The model the child talks to. The same one the parent is using. */
-  readonly modelLayer: Layer.Layer<LanguageModel.LanguageModel>;
+  /**
+   * The model the child talks to — whichever one the parent is using when the
+   * tool runs. A captured value would go stale on a mid-session model switch,
+   * and the child would quietly run (and bill) on the model the user moved
+   * away from.
+   */
+  readonly modelLayer: () => Layer.Layer<LanguageModel.LanguageModel>;
   /** Reports the child's progress into the parent's timeline. */
   readonly emitter: TurnEmitter;
   readonly threadId: ThreadId;
@@ -116,7 +125,7 @@ export function makeTaskTool(context: SubagentContext): AgentTool {
           threadId: context.threadId,
           turnId,
           model: "",
-          contextWindow: context.contextWindow,
+          contextWindow: context.contextWindow(),
           prompt: Prompt.make([
             { role: "system", content: `${context.systemPrompt()}\n\n${SUBAGENT_ADDENDUM}` },
             { role: "user", content: [{ type: "text", text: params.prompt }] },
@@ -125,7 +134,7 @@ export function makeTaskTool(context: SubagentContext): AgentTool {
           emitter: context.emitter,
           limits: SUBAGENT_STEP_LIMITS,
           isInterrupted: context.isInterrupted,
-        }).pipe(Effect.provide(context.modelLayer)),
+        }).pipe(Effect.provide(context.modelLayer())),
       );
 
       if (outcome._tag === "Failure") {

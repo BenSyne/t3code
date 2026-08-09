@@ -5,7 +5,12 @@ import * as Layer from "effect/Layer";
 import * as Prompt from "effect/unstable/ai/Prompt";
 
 import type { AgentToolkit } from "../tools/registry.ts";
-import { closeSession, setSessionStatus, type AgentSessionContext } from "./AgentSession.ts";
+import {
+  applyModelChoice,
+  closeSession,
+  setSessionStatus,
+  type AgentSessionContext,
+} from "./AgentSession.ts";
 import { createSessionStore } from "./sessionStore.ts";
 
 const THREAD = ThreadId.make("thread-1");
@@ -154,5 +159,70 @@ describe("session lifecycle helpers", () => {
     expect(context.running).toBeNull();
     expect(context.interrupted).toBe(false);
     expect(context.usage.inputTokens).toBe(0);
+  });
+});
+
+describe("applyModelChoice", () => {
+  const nextLayer = Layer.empty as AgentSessionContext["modelLayer"];
+
+  it("swaps model, effort, layer and window together", () => {
+    const { context } = makeStore();
+
+    applyModelChoice(
+      context,
+      {
+        model: "claude-opus-5",
+        reasoningEffort: "high",
+        modelLayer: nextLayer,
+        contextWindow: 500_000,
+      },
+      "2026-08-09T10:00:00.000Z",
+    );
+
+    expect(context.model).toBe("claude-opus-5");
+    expect(context.reasoningEffort).toBe("high");
+    expect(context.modelLayer).toBe(nextLayer);
+    expect(context.contextWindow).toBe(500_000);
+  });
+
+  it("updates the wire-visible record, or the orchestrator would restart the session", () => {
+    // ProviderCommandReactor compares session.model against the requested
+    // selection to decide whether anything changed. A stale record here makes
+    // every turn after a switch look like a fresh change.
+    const { context } = makeStore();
+
+    applyModelChoice(
+      context,
+      {
+        model: "claude-opus-5",
+        reasoningEffort: undefined,
+        modelLayer: nextLayer,
+        contextWindow: null,
+      },
+      "2026-08-09T10:01:00.000Z",
+    );
+
+    expect(context.session.model).toBe("claude-opus-5");
+    expect(context.session.updatedAt).toBe("2026-08-09T10:01:00.000Z");
+    expect(context.session.threadId).toBe(THREAD);
+  });
+
+  it("leaves the conversation and turn history alone", () => {
+    const { context } = makeStore();
+    recordTurn(context, "turn-1", "before the switch");
+
+    applyModelChoice(
+      context,
+      {
+        model: "claude-opus-5",
+        reasoningEffort: "low",
+        modelLayer: nextLayer,
+        contextWindow: null,
+      },
+      "2026-08-09T10:02:00.000Z",
+    );
+
+    expect(context.turns).toHaveLength(1);
+    expect(context.prompt.content).toHaveLength(3);
   });
 });
