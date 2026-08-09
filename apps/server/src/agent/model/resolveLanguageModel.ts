@@ -17,6 +17,8 @@ import * as AnthropicClient from "@effect/ai-anthropic/AnthropicClient";
 import * as AnthropicLanguageModel from "@effect/ai-anthropic/AnthropicLanguageModel";
 import * as OpenAiClient from "@effect/ai-openai/OpenAiClient";
 import * as OpenAiLanguageModel from "@effect/ai-openai/OpenAiLanguageModel";
+import * as OpenAiCompatClient from "@effect/ai-openai-compat/OpenAiClient";
+import * as OpenAiCompatLanguageModel from "@effect/ai-openai-compat/OpenAiLanguageModel";
 import * as OpenRouterClient from "@effect/ai-openrouter/OpenRouterClient";
 import * as OpenRouterLanguageModel from "@effect/ai-openrouter/OpenRouterLanguageModel";
 import * as Layer from "effect/Layer";
@@ -72,9 +74,14 @@ export function resolveLanguageModel(
       );
 
     case "openai-compat":
+      // A different package from `openai`, and the difference is the whole
+      // point: OpenAI's own client speaks the Responses API, while Ollama, LM
+      // Studio, vLLM and every other local server implement the older
+      // `/chat/completions`. Using the wrong one fails at the first request
+      // with a schema error that reads like a bug in this repository.
       return Layer.provide(
-        OpenAiLanguageModel.layer({ model: input.model }),
-        OpenAiClient.layer({
+        OpenAiCompatLanguageModel.layer({ model: input.model }),
+        OpenAiCompatClient.layer({
           apiKey: input.credential,
           // A local server usually ignores the key entirely, but the client
           // still wants one, which is why `credentials.ts` hands out a
