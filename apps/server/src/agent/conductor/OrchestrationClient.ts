@@ -22,7 +22,7 @@
  */
 import type {
   DispatchableClientOrchestrationCommand,
-  OrchestrationProject,
+  ProjectId,
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -35,6 +35,20 @@ export interface ThreadSummary {
   readonly providerInstanceId: ProviderInstanceId;
   readonly status: string;
   readonly updatedAt: string;
+}
+
+/**
+ * A project, as much of one as the agent needs to start work in it.
+ *
+ * Three fields rather than the full `OrchestrationProject` on purpose. The
+ * navigation-level projection already returns exactly this much, and naming
+ * the wide type here would force the client to hydrate every message in the
+ * workspace to answer "what projects are there".
+ */
+export interface ProjectSummary {
+  readonly id: ProjectId;
+  readonly title: string;
+  readonly workspaceRoot: string;
 }
 
 export interface ProviderSummary {
@@ -57,7 +71,7 @@ export interface OrchestrationClient {
   ) => Effect.Effect<{ readonly accepted: boolean; readonly detail?: string | undefined }>;
 
   readonly listProviders: Effect.Effect<ReadonlyArray<ProviderSummary>>;
-  readonly listProjects: Effect.Effect<ReadonlyArray<OrchestrationProject>>;
+  readonly listProjects: Effect.Effect<ReadonlyArray<ProjectSummary>>;
   readonly listThreads: (projectId: string) => Effect.Effect<ReadonlyArray<ThreadSummary>>;
   /** The transcript of a thread, as text the model can read. */
   readonly readThread: (threadId: ThreadId) => Effect.Effect<string>;

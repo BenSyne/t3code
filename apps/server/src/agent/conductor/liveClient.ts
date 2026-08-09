@@ -1,0 +1,156 @@
+/**
+ * The Conductor's `OrchestrationClient`, wired to the real server.
+ *
+ * Everything here is deliberately thin. The tools already decide what to do;
+ * this only translates their intent into the same commands the web UI sends
+ * and reads the same projections the web UI reads. If this file ever grows a
+ * decision of its own, the "headless client, not a back door" property that
+ * makes the Conductor safe has quietly been given up.
+ *
+ * Two shapes matter and are easy to get wrong:
+ *
+ * Failure is a *value*. A rejected command is something the model should read
+ * and adapt to — "that provider is not authenticated" is information, not a
+ * reason for the turn to die. Every method here converts errors into ordinary
+ * results, which is why none of them carry an error type.
+ *
+ * Snapshots come from `ProviderSnapshotStore`, never `ProviderRegistry`. The
+ * registry builds provider instances, this agent is one of the things it
+ * builds, so depending on it here is a cycle. The store exists precisely to
+ * be the half of that job which is safe to depend on.
+ *
+ * @module agent/conductor/liveClient
+ */
+import type { DispatchableClientOrchestrationCommand, ThreadId } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+
+import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProviderSnapshotStore } from "../../provider/Services/ProviderSnapshotStore.ts";
+import type { OrchestrationClient, ProviderSummary, ThreadSummary } from "./OrchestrationClient.ts";
+
+/** Transcript lines past this stop informing and start crowding the context. */
+const MAX_TRANSCRIPT_MESSAGES = 60;
+/** One pasted file should not become the whole of what the agent reads back. */
+const MAX_MESSAGE_CHARS = 2_000;
+
+const describe = (error: unknown): string =>
+  error instanceof Error && error.message !== "" ? error.message : "unknown error";
+
+const truncate = (text: string): string =>
+  text.length <= MAX_MESSAGE_CHARS ? text : `${text.slice(0, MAX_MESSAGE_CHARS)}… [truncated]`;
+
+/**
+ * Build the client from services already in the server graph.
+ *
+ * Requires the three it actually uses and nothing else, so the requirement
+ * that would reintroduce the cycle cannot be added here by accident.
+ */
+export const makeLiveOrchestrationClient = Effect.gen(function* () {
+  const engine = yield* OrchestrationEngineService;
+  const projections = yield* ProjectionSnapshotQuery;
+  const providerSnapshots = yield* ProviderSnapshotStore;
+
+  const dispatch: OrchestrationClient["dispatch"] = (
+    command: DispatchableClientOrchestrationCommand,
+  ) =>
+    engine.dispatch(command).pipe(
+      Effect.map(() => ({ accepted: true }) as const),
+      // A refusal is the answer, not a failure: the model can read "that
+      // provider is not authenticated" and pick a different one.
+      Effect.catchCause((cause) => Effect.succeed({ accepted: false, detail: describe(cause) })),
+    );
+
+  const listProviders: OrchestrationClient["listProviders"] = Effect.map(
+    providerSnapshots.get,
+    (providers): ReadonlyArray<ProviderSummary> =>
+      providers.map((provider) => ({
+        instanceId: provider.instanceId,
+        driverKind: provider.driver,
+        displayName: provider.displayName?.trim() || provider.driver,
+        // What the tools mean by available is "a turn sent here would run",
+        // which is narrower than the snapshot's several near-ready states.
+        available: provider.enabled && provider.installed && provider.status === "ready",
+        defaultModel: provider.models.find((model) => model.isDefault)?.slug ?? null,
+      })),
+  );
+
+  /**
+   * The navigation-level model.
+   *
+   * `getShellSnapshot` rather than `getSnapshot`: listing threads needs titles
+   * and status, and the full snapshot hydrates every message of every thread
+   * in the workspace to produce them. A projection failure resolves to nothing
+   * rather than failing — an agent that cannot list threads should say so, not
+   * lose the turn.
+   */
+  const shell = projections
+    .getShellSnapshot()
+    .pipe(Effect.catchCause(() => Effect.succeed(undefined)));
+
+  const listProjects: OrchestrationClient["listProjects"] = Effect.map(shell, (model) =>
+    (model?.projects ?? []).map((project) => ({
+      id: project.id,
+      title: project.title,
+      workspaceRoot: project.workspaceRoot,
+    })),
+  );
+
+  const listThreads: OrchestrationClient["listThreads"] = (projectId) =>
+    Effect.map(
+      shell,
+      (model): ReadonlyArray<ThreadSummary> =>
+        (model?.threads ?? [])
+          .filter((thread) => thread.projectId === projectId)
+          .map((thread) => ({
+            threadId: thread.id,
+            title: thread.title,
+            // A thread with no session has not run yet; its configured instance
+            // is still the honest answer to "who would this go to".
+            providerInstanceId: thread.modelSelection.instanceId,
+            status: thread.session?.status ?? "idle",
+            updatedAt: thread.updatedAt,
+          })),
+    );
+
+  /**
+   * The thread as text.
+   *
+   * Rendered rather than handed over as structure because the consumer is a
+   * language model reading someone else's work, and the newest exchanges are
+   * what it needs — hence the tail, not the head.
+   */
+  const readThread: OrchestrationClient["readThread"] = (threadId: ThreadId) =>
+    projections.getThreadDetailById(threadId).pipe(
+      Effect.map((found) => {
+        if (Option.isNone(found)) {
+          return `No thread ${threadId} was found. It may have been deleted.`;
+        }
+        const thread = found.value;
+        const recent = thread.messages.slice(-MAX_TRANSCRIPT_MESSAGES);
+        const omitted = thread.messages.length - recent.length;
+        const lines = recent.map(
+          (message) => `${message.role === "user" ? "User" : "Agent"}: ${truncate(message.text)}`,
+        );
+        return [
+          `Thread: ${thread.title}`,
+          `Status: ${thread.session?.status ?? "idle"}`,
+          ...(omitted > 0 ? [`(${omitted} earlier messages omitted)`] : []),
+          "",
+          ...lines,
+        ].join("\n");
+      }),
+      Effect.catchCause((cause) =>
+        Effect.succeed(`Could not read thread ${threadId}: ${describe(cause)}`),
+      ),
+    );
+
+  return {
+    dispatch,
+    listProviders,
+    listProjects,
+    listThreads,
+    readThread,
+  } satisfies OrchestrationClient;
+});
