@@ -28,7 +28,6 @@ import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../../config.ts";
 import * as UsageService from "../../usage/UsageService.ts";
 import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
-import type { ThreadId } from "@t3tools/contracts";
 import { ConductorClient } from "../../agent/conductor/ConductorClient.ts";
 import type { ConductorContext } from "../../agent/conductor/conductorTools.ts";
 import { DEFAULT_FLEET_POLICY } from "../../agent/conductor/fleet.ts";
@@ -115,11 +114,6 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
       const backend = config.backend;
       const baseUrl = config.baseUrl.trim() === "" ? undefined : config.baseUrl.trim();
       const crypto = yield* Crypto.Crypto;
-      // Threads this instance has started, for the fleet limit. Per instance
-      // rather than per session: the cap exists to bound concurrent spend, and
-      // spend does not reset because the user opened a new thread.
-      const startedThreads = new Set<ThreadId>();
-
       // Read on demand rather than captured: a key added after the instance was
       // materialised should work without restarting the server.
       const credential = () =>
@@ -194,9 +188,6 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
             selfDriverKind: T3AGENT_DRIVER_KIND,
             nextId: crypto.randomUUIDv4.pipe(Effect.orDie),
             nowIso: Effect.map(DateTime.now, DateTime.formatIso),
-            runningThreads: () => startedThreads.size,
-            noteStarted: (threadId) => startedThreads.add(threadId),
-            didStart: (threadId) => startedThreads.has(threadId),
           }
         : null;
 

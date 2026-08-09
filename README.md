@@ -50,7 +50,7 @@ Stated plainly, because finding out later is worse:
 - **It won't answer approval prompts for you** unless you turn that on separately. Approvals are how
   you stay in the loop.
 - Delegating spends the **target** provider's credits — nothing per turn on a subscription, real
-  money on an API key. It's capped at four delegated threads at once.
+  money on an API key — and there is no cap on how many run at once, so a wide fan-out spends widely.
 
 ---
 

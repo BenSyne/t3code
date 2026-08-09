@@ -60,7 +60,9 @@ describe("naming who powers each model", () => {
 
 describe("reasoning picker", () => {
   it("offers the reasoning control on models the catalogue vouches for", () => {
-    const sonnet = snapshot().models.find((model) => model.slug === "claude-sonnet-5");
+    const sonnet = snapshot({ backend: "anthropic" }).models.find(
+      (model) => model.slug === "claude-sonnet-5",
+    );
     const descriptors = sonnet?.capabilities?.optionDescriptors ?? [];
 
     expect(descriptors).toHaveLength(1);
@@ -70,7 +72,9 @@ describe("reasoning picker", () => {
   });
 
   it('puts "Default" first, selected, and honest about meaning "send nothing"', () => {
-    const sonnet = snapshot().models.find((model) => model.slug === "claude-sonnet-5");
+    const sonnet = snapshot({ backend: "anthropic" }).models.find(
+      (model) => model.slug === "claude-sonnet-5",
+    );
     const descriptor = sonnet?.capabilities?.optionDescriptors?.[0];
     const first = descriptor?.type === "select" ? descriptor.options[0] : undefined;
 
@@ -80,7 +84,9 @@ describe("reasoning picker", () => {
   });
 
   it("offers only the levels the backend can honour", () => {
-    const sonnet = snapshot().models.find((model) => model.slug === "claude-sonnet-5");
+    const sonnet = snapshot({ backend: "anthropic" }).models.find(
+      (model) => model.slug === "claude-sonnet-5",
+    );
     const descriptor = sonnet?.capabilities?.optionDescriptors?.[0];
     const ids = descriptor?.type === "select" ? descriptor.options.map((o) => o.id) : [];
 

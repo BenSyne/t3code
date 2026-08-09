@@ -7,7 +7,6 @@ const check = (over: Partial<Parameters<typeof checkTarget>[0]> = {}) =>
     policy: DEFAULT_FLEET_POLICY,
     targetDriverKind: "codex",
     selfDriverKind: "t3agent",
-    runningThreads: 0,
     ...over,
   });
 
@@ -31,18 +30,11 @@ describe("checkTarget", () => {
     expect(check({ policy, targetDriverKind: "t3agent" })).toEqual({ _tag: "Allowed" });
   });
 
-  it("stops at the fleet limit", () => {
-    const verdict = check({ runningThreads: DEFAULT_FLEET_POLICY.limit });
-    expect(verdict._tag).toBe("Refused");
-    if (verdict._tag !== "Refused") return;
-    expect(verdict.reason).toContain("limit");
-  });
-
-  it("checks self-targeting before the fleet limit, so the reason is the specific one", () => {
-    const verdict = check({ targetDriverKind: "t3agent", runningThreads: 99 });
-    expect(verdict._tag).toBe("Refused");
-    if (verdict._tag !== "Refused") return;
-    expect(verdict.reason).toContain("built-in agent");
+  it("does not cap how many delegations run at once", () => {
+    // Swarming is the point. A limit that bites mid-fan-out is worse than
+    // none: the agent has already spent the tokens deciding what to delegate
+    // by the time it discovers it cannot.
+    expect(check()).toEqual({ _tag: "Allowed" });
   });
 });
 
