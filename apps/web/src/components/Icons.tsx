@@ -663,6 +663,30 @@ export const OpenCodeIcon: Icon = (props) => (
   </svg>
 );
 
+/**
+ * T3 Agent — the built-in agent.
+ *
+ * A filled mark rather than an outline, so it reads as first-party next to the
+ * vendor logos it sits beside in the provider list. Uses `currentColor` so it
+ * inherits theme and hover states instead of needing light/dark variants.
+ */
+export const T3AgentIcon: Icon = ({ className, ...props }) => (
+  <svg
+    {...props}
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <path
+      d="M12 2.5 3.5 7v10L12 21.5 20.5 17V7L12 2.5Zm0 2.31 6.5 3.44v7.5L12 19.19 5.5 15.75v-7.5L12 4.81Z"
+      fill="currentColor"
+    />
+    <path d="M8.25 9.25h7.5v1.9h-2.8v5.1h-1.9v-5.1h-2.8v-1.9Z" fill="currentColor" />
+  </svg>
+);
+
 export const GithubCopilotIcon: Icon = ({ className, ...props }) => (
   <svg
     {...props}
