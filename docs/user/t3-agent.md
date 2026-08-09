@@ -1,11 +1,11 @@
-# T3 Agent
+# Theo
 
-T3 Agent is the coding agent built into T3 Code. Unlike the other providers, there is nothing to
+Theo is the coding agent built into T3 Code. Unlike the other providers, there is nothing to
 install — you give it an API key and it works.
 
 ## Setting it up
 
-1. Open **Settings → Providers** and add a **T3 Agent** instance.
+1. Open **Settings → Providers** and add a **Theo** instance.
 2. Choose a **Provider**: Anthropic, OpenAI, OpenRouter, or OpenAI-compatible.
 3. Set the **API key variable** to the name of an environment variable — `ANTHROPIC_API_KEY`,
    `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, whatever you like.
@@ -15,7 +15,7 @@ install — you give it an API key and it works.
    everywhere it would otherwise be displayed or logged.
 5. Pick a **Default model**, or leave it blank for the provider's default.
 
-That is the whole setup. Start a thread and pick T3 Agent from the model picker.
+That is the whole setup. Start a thread and pick Theo from the model picker.
 
 ### Running against a local model
 
@@ -85,7 +85,7 @@ Conversations are written to disk, so a thread survives restarting T3 Code.
 ## About your API key
 
 Worth being explicit, because this differs from the other providers. Codex, Claude, and the rest log
-in through their own CLI and T3 Code never sees a raw key. T3 Agent talks to the model API itself,
+in through their own CLI and T3 Code never sees a raw key. Theo talks to the model API itself,
 so it needs the actual key.
 
 The key is stored in T3 Code's secret store with owner-only file permissions, never written to
