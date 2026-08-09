@@ -13,7 +13,7 @@
  *
  * @module agent/loop/AgentSession
  */
-import type { ProviderSession, ThreadId } from "@t3tools/contracts";
+import type { ProviderSession, ThreadId, TurnId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
 import * as LanguageModel from "effect/unstable/ai/LanguageModel";
@@ -31,6 +31,11 @@ export interface AgentSessionContext {
   readonly modelLayer: Layer.Layer<LanguageModel.LanguageModel>;
   /** Conversation so far. Replaced wholesale each turn; never mutated. */
   prompt: Prompt.Prompt;
+  /**
+   * Completed turns, oldest first. We own this rather than asking a provider
+   * for it, which is what makes rollback exact instead of approximate.
+   */
+  turns: Array<{ readonly id: TurnId; readonly items: ReadonlyArray<unknown> }>;
   /** One-shot teardown latch, so stopping twice is a no-op. */
   stopped: boolean;
 }

@@ -52,6 +52,7 @@ function makeContext(layer: AgentSessionContext["modelLayer"]): AgentSessionCont
     model: "claude-sonnet-5",
     modelLayer: layer,
     prompt: Prompt.empty,
+    turns: [],
     stopped: false,
   };
 }
