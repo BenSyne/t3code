@@ -35,7 +35,14 @@ import * as Prompt from "effect/unstable/ai/Prompt";
 import type * as Response from "effect/unstable/ai/Response";
 
 import { describeToolCall, describeToolResult } from "../events/toolItemMapping.ts";
-import { EMPTY_USAGE, foldUsage, toUsageSnapshot, type UsageTally } from "../events/usage.ts";
+import {
+  EMPTY_USAGE,
+  foldUsage,
+  toUsageSnapshot,
+  type RequestUsage,
+  type TurnCost,
+  type UsageTally,
+} from "../events/usage.ts";
 import type { AgentToolkit } from "../tools/registry.ts";
 import {
   DEFAULT_STEP_LIMITS,
@@ -92,6 +99,13 @@ export interface RunTurnInput {
   readonly toolkit: AgentToolkit;
   readonly emitter: TurnEmitter;
   readonly limits?: StepLimits | undefined;
+  /**
+   * Prices one request. Defaults to unpriced.
+   *
+   * Passed in rather than looked up here so the loop stays runnable against a
+   * stub with no rate table and no services.
+   */
+  readonly priceStep?: ((usage: RequestUsage) => TurnCost) | undefined;
   /** Checked between steps. Lets a stop request land without killing the fiber. */
   readonly isInterrupted: () => boolean;
 }
@@ -137,7 +151,8 @@ export const runTurn = Effect.fn("t3agent/runTurn")(function* (input: RunTurnInp
 
     tally = recordStep(tally, step.toolCallCount);
     if (step.usage !== null) {
-      usage = foldUsage(usage, step.usage, step.toolCallCount);
+      const cost = input.priceStep?.(step.usage) ?? { costUsd: 0, costSource: "unpriced" as const };
+      usage = foldUsage(usage, step.usage, step.toolCallCount, cost);
       yield* input.emitter.tokenUsage({
         threadId: input.threadId,
         usage: toUsageSnapshot(usage, input.contextWindow),

@@ -29,6 +29,12 @@ export function ContextWindowMeter(props: {
     ? "var(--color-error)"
     : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";
 
+  // Only providers billing a key per token report a cost. A subscription-backed
+  // CLI leaves it absent, where showing "$0.00" would read as free rather than
+  // as not-applicable.
+  const costLine = formatUsd(usage.totalCostUsd, usage.costSource);
+  const lastCostLine = formatUsd(usage.lastCostUsd, usage.costSource);
+
   return (
     <Popover>
       <PopoverTrigger
@@ -128,6 +134,18 @@ export function ContextWindowMeter(props: {
               </span>
             </div>
           ) : null}
+          {costLine ? (
+            <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
+              <span className="text-secondary-label">Spent</span>
+              <span className="font-medium tabular-nums text-secondary-label">{costLine}</span>
+            </div>
+          ) : null}
+          {lastCostLine ? (
+            <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
+              <span className="text-secondary-label">Last turn</span>
+              <span className="font-medium tabular-nums text-secondary-label">{lastCostLine}</span>
+            </div>
+          ) : null}
           {usage.compactsAutomatically ? (
             <div className="mt-1 text-pretty text-secondary-label text-[11px] font-medium">
               {providerDisplayName ?? "It"} automatically compacts its context when needed.
@@ -137,4 +155,29 @@ export function ContextWindowMeter(props: {
       </PopoverPopup>
     </Popover>
   );
+}
+
+/**
+ * Money, or nothing at all.
+ *
+ * `unpriced` means the model is not in the rate table — reported as unknown
+ * rather than as zero, because a running total that quietly omits a leg is
+ * worse than one that admits it is incomplete. Sub-cent amounts keep four
+ * decimals: on a cheap model a whole conversation can land under a penny, and
+ * rounding it to "$0.00" tells the user nothing.
+ */
+function formatUsd(
+  value: number | null | undefined,
+  source: "providerReported" | "modelPriced" | "unpriced" | null | undefined,
+): string | null {
+  if (value === undefined || value === null || source === undefined || source === null) {
+    return null;
+  }
+  if (source === "unpriced") {
+    return "unknown";
+  }
+  if (value === 0) {
+    return "$0.00";
+  }
+  return value < 0.01 ? `$${value.toFixed(4)}` : `$${value.toFixed(2)}`;
 }

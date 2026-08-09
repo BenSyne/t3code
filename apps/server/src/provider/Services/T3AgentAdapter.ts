@@ -8,6 +8,7 @@
  *
  * @module provider/Services/T3AgentAdapter
  */
+import type * as Effect from "effect/Effect";
 import type * as Crypto from "effect/Crypto";
 import type * as FileSystem from "effect/FileSystem";
 import type { HttpClient } from "effect/unstable/http";
@@ -17,6 +18,7 @@ import type { McpServers } from "../../agent/mcp/serverConfig.ts";
 import type { PermissionRule } from "../../agent/permission/rules.ts";
 import type { BackendKind } from "../../agent/model/resolveLanguageModel.ts";
 import type { ResolvedCredential } from "../../agent/model/credentials.ts";
+import type { RateTable } from "../../usage/usagePricing.ts";
 import type { ProviderAdapterError } from "../Errors.ts";
 import type { ProviderAdapterShape } from "./ProviderAdapter.ts";
 
@@ -38,6 +40,8 @@ export interface T3AgentAdapterOptions {
   /** Where conversations are written so they survive a restart. */
   readonly transcriptDirectory: string;
   readonly mcpServers: McpServers;
+  /** Model rates, for showing what a turn cost on a key the user pays for. */
+  readonly rateTable: Effect.Effect<RateTable>;
   /** For discovering global skills. */
   readonly homeDirectory: string;
 }

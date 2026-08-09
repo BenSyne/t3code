@@ -27,6 +27,11 @@ export interface RequestUsage {
   };
 }
 
+export interface TurnCost {
+  readonly costUsd: number;
+  readonly costSource: "providerReported" | "modelPriced" | "unpriced";
+}
+
 export interface UsageTally {
   /** Lifetime input tokens across every request in the thread. */
   readonly inputTokens: number;
@@ -36,6 +41,18 @@ export interface UsageTally {
   /** Context size after the most recent request: its input plus its output. */
   readonly contextTokens: number;
   readonly toolUses: number;
+  /** Lifetime cost of the thread, in US dollars. */
+  readonly costUsd: number;
+  /** What the most recent request cost, so one exchange has a visible price. */
+  readonly lastCostUsd: number;
+  /**
+   * How the figure was reached.
+   *
+   * Sticky at `unpriced` once anything in the thread could not be priced: a
+   * running total that silently omits a leg is worse than one that admits it
+   * is incomplete.
+   */
+  readonly costSource: TurnCost["costSource"];
 }
 
 export const EMPTY_USAGE: UsageTally = {
@@ -45,6 +62,9 @@ export const EMPTY_USAGE: UsageTally = {
   reasoningOutputTokens: 0,
   contextTokens: 0,
   toolUses: 0,
+  costUsd: 0,
+  lastCostUsd: 0,
+  costSource: "modelPriced",
 };
 
 /**
@@ -58,6 +78,7 @@ export function foldUsage(
   tally: UsageTally,
   usage: RequestUsage,
   toolCallsThisStep: number,
+  cost: TurnCost = { costUsd: 0, costSource: "unpriced" },
 ): UsageTally {
   const input = nonNegative(usage.inputTokens.total);
   const output = nonNegative(usage.outputTokens.total);
@@ -69,6 +90,35 @@ export function foldUsage(
     reasoningOutputTokens: tally.reasoningOutputTokens + nonNegative(usage.outputTokens.reasoning),
     contextTokens: input + output,
     toolUses: tally.toolUses + Math.max(0, toolCallsThisStep),
+    costUsd: tally.costUsd + Math.max(0, cost.costUsd),
+    lastCostUsd: Math.max(0, cost.costUsd),
+    // Once anything is unpriced the total is a floor, not a figure.
+    costSource: tally.costSource === "unpriced" ? "unpriced" : cost.costSource,
+  };
+}
+
+/**
+ * Token counts in the shape the pricing table expects.
+ *
+ * `uncachedInputTokens` excludes the cached portion, because the two are
+ * charged at different rates and double-counting the cache inflates the bill
+ * the user is shown.
+ */
+export function toPricingTotals(usage: RequestUsage): {
+  readonly uncachedInputTokens: number;
+  readonly cachedInputTokens: number;
+  readonly cacheCreationTokens: number;
+  readonly outputTokens: number;
+  readonly reasoningTokens: number;
+} {
+  const total = nonNegative(usage.inputTokens.total);
+  const cached = Math.min(total, nonNegative(usage.inputTokens.cacheRead));
+  return {
+    uncachedInputTokens: total - cached,
+    cachedInputTokens: cached,
+    cacheCreationTokens: 0,
+    outputTokens: nonNegative(usage.outputTokens.total),
+    reasoningTokens: nonNegative(usage.outputTokens.reasoning),
   };
 }
 
@@ -92,6 +142,9 @@ export function toUsageSnapshot(
     outputTokens: tally.outputTokens,
     reasoningOutputTokens: tally.reasoningOutputTokens,
     toolUses: tally.toolUses,
+    totalCostUsd: tally.costUsd,
+    lastCostUsd: tally.lastCostUsd,
+    costSource: tally.costSource,
   };
 }
 
