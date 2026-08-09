@@ -29,7 +29,11 @@ import { ToolFailure, toolFailure } from "../tools/failure.ts";
 import { defineTool, type AgentTool, type ToolContributor } from "../tools/registry.ts";
 import { checkApproval, checkTarget, type FleetPolicy } from "./fleet.ts";
 import type { OrchestrationClient } from "./OrchestrationClient.ts";
-import { planThreadStateChange, THREAD_STATE_ACTIONS } from "./threadLifecycle.ts";
+import {
+  orderForAttention,
+  planThreadStateChange,
+  THREAD_STATE_ACTIONS,
+} from "./threadLifecycle.ts";
 
 export interface ConductorContext {
   readonly client: OrchestrationClient;
@@ -174,13 +178,16 @@ const listProjects = (context: ConductorContext): AgentTool =>
   );
 
 /**
- * The most recently touched threads, newest first.
+ * The threads worth looking at, most in need of someone first.
  *
  * A cap rather than the lot: a long-lived project accumulates hundreds, the
  * agent almost always wants the recent ones, and quietly returning everything
  * would spend the context window on threads from months ago. When the cap
  * bites, the result says so — a truncated list that claims to be complete is
  * how an agent concludes something does not exist.
+ *
+ * Ordered by `orderForAttention` rather than by time, so the cap can never be
+ * what hides a thread that is blocked waiting for an answer.
  */
 const THREAD_LIST_LIMIT = 40;
 
@@ -189,7 +196,8 @@ const listThreads = (context: ConductorContext): AgentTool =>
     Tool.make("list_threads", {
       description:
         "List the recent threads in a project — including ones you did not start — so you can " +
-        "read what another agent is doing or has already done. `lifecycle` is where the thread " +
+        "read what another agent is doing or has already done. Anything blocked comes first, then " +
+        "most recently touched. `lifecycle` is where the thread " +
         "sits in the user's inbox (active, settled, snoozed, pinned, archived) and `isRunning` " +
         "is whether a turn is in flight. `awaitingInput` or `awaitingApproval` means it has " +
         "stopped and is waiting on a person — it will not move until someone answers, so polling " +
@@ -219,9 +227,7 @@ const listThreads = (context: ConductorContext): AgentTool =>
     }),
     Effect.fnUntraced(function* (params) {
       const all = yield* context.client.listThreads(params.projectId);
-      const recent = [...all]
-        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-        .slice(0, THREAD_LIST_LIMIT);
+      const recent = orderForAttention(all).slice(0, THREAD_LIST_LIMIT);
       const omitted = all.length - recent.length;
       return {
         threads: recent.map((thread) => ({

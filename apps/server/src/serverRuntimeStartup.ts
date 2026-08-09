@@ -28,6 +28,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
+import { reconcileInterruptedTurns } from "./orchestration/reconcileInterruptedTurns.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
@@ -352,6 +353,22 @@ export const make = (options?: StartupOptions) =>
           yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
           yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
         }),
+      );
+
+      // Before anything can observe the read model: a turn the last shutdown
+      // caught mid-flight is still recorded as running, and nothing else ever
+      // clears it — the reaper skips it by design and an interrupt is sent to
+      // a session that no longer exists. Swallowed on failure, because a
+      // server that will not start is worse than the threads it was tidying.
+      yield* Effect.logDebug("startup phase: settling turns lost to the last shutdown");
+      yield* runStartupPhase(
+        "turns.reconcile",
+        reconcileInterruptedTurns.pipe(
+          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.catchCause((cause) =>
+            Effect.logWarning("failed to settle turns lost to the last shutdown", { cause }),
+          ),
+        ),
       );
 
       const welcomeBase = yield* resolveWelcomeBase;
