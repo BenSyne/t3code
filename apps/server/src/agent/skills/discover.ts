@@ -28,6 +28,13 @@ export interface DiscoveredSkill {
   /** Absolute path to the `SKILL.md`, so the tool can read the body later. */
   readonly location: string;
   readonly scope: "project" | "global";
+  /**
+   * The instructions, when they are compiled in rather than on disk.
+   *
+   * Built-in knowledge has no file to read — and must not, because a packaged
+   * build has no repository to read it from.
+   */
+  readonly body?: string | undefined;
 }
 
 export interface SkillDiscovery {
