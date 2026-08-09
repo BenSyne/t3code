@@ -35,7 +35,11 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "com.t3tools.t3code";
+// This build is redistributed, not upstream's. Apple binds bundle identifiers
+// to teams, so signing `com.t3tools.t3code` with a different Developer ID is
+// both rejected and dishonest — and two apps sharing an identifier collide on
+// preferences and update channels for anyone who installs both.
+const DESKTOP_APP_ID = "com.bensyne.t3code-agent";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
