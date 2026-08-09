@@ -14,6 +14,7 @@
  *
  * @module agent/conductor/transcript
  */
+import type { PendingUserInput } from "./pendingRequests.ts";
 
 /** Lines past this stop informing and start crowding the context. */
 const MAX_ENTRIES = 60;
@@ -39,6 +40,16 @@ export interface TranscriptInput {
   readonly status: string;
   readonly messages: ReadonlyArray<TranscriptMessage>;
   readonly activities: ReadonlyArray<TranscriptActivity>;
+  /**
+   * Questions the thread is blocked on.
+   *
+   * Reported here rather than through a tool of its own, because this is
+   * already where the agent looks to collect a result — and "it is waiting for
+   * you" is the single most important thing a read can say. A blocked thread
+   * looks exactly like a working one from the outside, so without this the
+   * only available move is to poll something that will never change.
+   */
+  readonly pending?: ReadonlyArray<PendingUserInput> | undefined;
 }
 
 const truncate = (text: string, limit: number): string =>
@@ -89,9 +100,39 @@ export function renderTranscript(input: TranscriptInput): string {
     ...(omitted > 0 ? [`(${omitted} earlier entries omitted)`] : []),
   ];
 
-  if (recent.length === 0) {
-    return [...header, "", "Nothing has happened in this thread yet."].join("\n");
-  }
+  const body =
+    recent.length === 0
+      ? ["Nothing has happened in this thread yet."]
+      : recent.map((entry) => entry.line);
 
-  return [...header, "", ...recent.map((entry) => entry.line)].join("\n");
+  return [...header, "", ...body, ...blockedSection(input.pending ?? [])].join("\n");
+}
+
+/**
+ * The "it is waiting for you" block.
+ *
+ * Last rather than first, so it is the freshest thing in the reader's context,
+ * and explicit about the answer shape because getting it wrong sends nonsense
+ * to an agent that is stuck until someone sends something.
+ */
+function blockedSection(pending: ReadonlyArray<PendingUserInput>): ReadonlyArray<string> {
+  if (pending.length === 0) {
+    return [];
+  }
+  return [
+    "",
+    "This thread is blocked waiting for an answer. It will not continue until one is sent.",
+    ...pending.flatMap((request) => [
+      `  request ${request.requestId}:`,
+      ...(request.questions.length === 0
+        ? ["    (the question could not be read — tell the user rather than guessing)"]
+        : request.questions.map(
+            (question) =>
+              `    ${question.id}: ${question.question}` +
+              (question.options.length === 0
+                ? " (free text)"
+                : ` [${question.options.join(" | ")}]${question.multiSelect ? " (choose one or more)" : ""}`),
+          )),
+    ]),
+  ];
 }

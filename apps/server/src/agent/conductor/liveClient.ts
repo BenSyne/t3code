@@ -42,6 +42,7 @@ import type {
   ProviderSummary,
   ThreadSummary,
 } from "./OrchestrationClient.ts";
+import { pendingUserInputOf } from "./pendingRequests.ts";
 import { lifecycleOf } from "./threadLifecycle.ts";
 import { renderTranscript } from "./transcript.ts";
 
@@ -160,6 +161,8 @@ export const makeLiveOrchestrationClient = Effect.gen(function* () {
     updatedAt: thread.updatedAt,
     lifecycle: lifecycleOf(thread, nowIso),
     isRunning: (thread.session?.activeTurnId ?? null) !== null,
+    awaitingInput: thread.hasPendingUserInput,
+    awaitingApproval: thread.hasPendingApprovals,
   });
 
   const listThreads: OrchestrationClient["listThreads"] = (projectId) =>
@@ -202,11 +205,22 @@ export const makeLiveOrchestrationClient = Effect.gen(function* () {
           status: thread.session?.status ?? "idle",
           messages: thread.messages,
           activities: thread.activities,
+          pending: pendingUserInputOf(thread.activities),
         });
       }),
       Effect.catchCause((cause) =>
         Effect.succeed(`Could not read thread ${threadId}: ${describe(cause)}`),
       ),
+    );
+
+  const pendingInput: OrchestrationClient["pendingInput"] = (threadId) =>
+    projections.getThreadDetailById(threadId).pipe(
+      Effect.map((found) =>
+        Option.isNone(found) ? [] : pendingUserInputOf(found.value.activities),
+      ),
+      // A thread whose questions cannot be read is reported as unblocked
+      // rather than failing the turn. The transcript still carries the block.
+      Effect.catchCause(() => Effect.succeed([])),
     );
 
   return {
@@ -217,5 +231,6 @@ export const makeLiveOrchestrationClient = Effect.gen(function* () {
     listThreads,
     getThread,
     readThread,
+    pendingInput,
   } satisfies OrchestrationClient;
 });

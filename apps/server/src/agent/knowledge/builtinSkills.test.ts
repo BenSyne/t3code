@@ -112,6 +112,22 @@ describe("the routing skill", () => {
     expect(body).toMatch(/Nothing\s+in a slug tells you where on that ladder it sits/);
   });
 
+  it("teaches that a blocked thread is not a slow one", () => {
+    // The three states look identical from outside. Without this the agent
+    // polls a thread that has stopped and will never move again.
+    expect(body).toContain("awaitingInput");
+    expect(body).toMatch(/Polling it is wasted/);
+  });
+
+  it("sends corrections into the existing thread rather than a new one", () => {
+    expect(body).toContain("send_to_thread");
+    expect(body).toMatch(/Starting over throws away/);
+  });
+
+  it("leaves approvals to the user even where it can answer questions", () => {
+    expect(body).toContain("Approvals are the user's call");
+  });
+
   it("names every effort level the delegation tool accepts", () => {
     for (const effort of ["none", "minimal", "low", "medium", "high", "xhigh", "max"]) {
       expect(body).toContain(effort);

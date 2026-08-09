@@ -389,6 +389,26 @@ costs time and money roughly in proportion.
 Raising effort on a task that was never hard buys nothing. Lowering it on a
 subtle bug wastes the whole delegation.
 
+## After you delegate
+
+A delegation is not finished when it starts. Read it back before reporting
+anything, and read what it *did* — \`read_delegated_thread\` shows the work and
+marks failures, not just what the agent said about itself. An agent claiming
+success above a \`[failed]\` line is the case this exists for.
+
+Three states look identical from outside and are not:
+
+- **Running** — \`isRunning\`. Leave it alone; check again later.
+- **Blocked** — \`awaitingInput\` or \`awaitingApproval\`. It has stopped and
+  will never move on its own. Polling it is wasted. Either answer the question
+  with \`answer_thread_question\`, if the task you set actually settles it, or
+  tell the user what is being asked. Approvals are the user's call.
+- **Finished** — neither. Read it and report.
+
+To correct or extend work, use \`send_to_thread\` rather than a fresh
+delegation. Starting over throws away everything that agent has already
+established, and the correction is usually only meaningful against it.
+
 ## Say what you did
 
 After delegating, tell the user which agent and effort you chose and why —

@@ -196,6 +196,7 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
             nowIso: Effect.map(DateTime.now, DateTime.formatIso),
             runningThreads: () => startedThreads.size,
             noteStarted: (threadId) => startedThreads.add(threadId),
+            didStart: (threadId) => startedThreads.has(threadId),
           }
         : null;
 
