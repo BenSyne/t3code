@@ -192,8 +192,14 @@ const connectOne = Effect.fnUntraced(function* (input: {
   });
 
   yield* request(initializeRequest);
-  const listed = yield* request(listToolsRequest);
-  const tools = capCatalog(parseToolList(listed));
+  const listed = parseToolList(yield* request(listToolsRequest));
+  if (listed._tag === "Unreadable") {
+    // Failing the connection rather than continuing with no tools. A server we
+    // cannot understand is not a server offering nothing, and reporting it as
+    // the latter is how a broken connection comes to look like a working one.
+    return yield* Effect.fail(mcpServerError(input.name, listed.reason));
+  }
+  const tools = capCatalog(listed.tools);
 
   return {
     name: input.name,
