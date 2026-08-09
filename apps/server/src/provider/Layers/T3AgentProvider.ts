@@ -87,17 +87,46 @@ function reasoningCapabilities(model: CatalogModel): ModelCapabilities | null {
  * heard of it — the user typed it deliberately, and a picker that hides the
  * model the instance is actually set to is worse than one that is incomplete.
  */
+/**
+ * The vendor, unless the model's name already opens with it.
+ *
+ * The picker strips a leading vendor word off the label — sensible, since
+ * "Anthropic Claude Sonnet 5" under a line reading "Anthropic" says it twice.
+ * But the rule cannot tell redundancy from a name: "DeepSeek V4 Pro" *is* what
+ * that model is called, and stripping left a row reading "V4 Pro", which names
+ * nothing.
+ *
+ * So the vendor is only claimed when it adds something. Where it does not, the
+ * name already carries it and the row still shows which instance served it.
+ */
+function vendorWorthShowing(model: CatalogModel): string | undefined {
+  if (model.vendor === undefined) {
+    return undefined;
+  }
+  const label = model.label.toLowerCase();
+  const vendor = model.vendor.toLowerCase();
+  return label === vendor || label.startsWith(`${vendor} `) ? undefined : model.vendor;
+}
+
 function buildModels(settings: T3AgentSettings): ReadonlyArray<ServerProviderModel> {
   const preferred = defaultModelFor(settings);
   const catalogue = KNOWN_MODELS[settings.backend];
 
-  const known = catalogue.map((model) => ({
-    slug: model.id,
-    name: model.label,
-    isCustom: false,
-    isDefault: model.id === preferred,
-    capabilities: reasoningCapabilities(model),
-  }));
+  const known = catalogue.map((model) => {
+    // Rendered under the model as "<instance> · <vendor>". The same field
+    // OpenCode uses for the provider behind each of its models — this backend
+    // is an aggregator in exactly the same way, so it earns the same treatment
+    // rather than a second mechanism that looks almost like it.
+    const vendor = vendorWorthShowing(model);
+    return {
+      slug: model.id,
+      name: model.label,
+      ...(vendor === undefined ? {} : { subProvider: vendor }),
+      isCustom: false,
+      isDefault: model.id === preferred,
+      capabilities: reasoningCapabilities(model),
+    };
+  });
 
   const seen = new Set(known.map((model) => model.slug));
   const extra = [preferred, ...settings.customModels]

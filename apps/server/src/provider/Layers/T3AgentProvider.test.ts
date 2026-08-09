@@ -25,6 +25,39 @@ const snapshot = (overrides: Record<string, unknown> = {}) =>
     checkedAt: "2026-08-09T10:00:00.000Z",
   });
 
+describe("naming who powers each model", () => {
+  const openrouter = () => snapshot({ backend: "openrouter" }).models;
+  const find = (slug: string) => openrouter().find((model) => model.slug === slug);
+
+  it("names the vendor behind an aggregated model", () => {
+    // Without it an OpenRouter list is a wall of names with no way to tell a
+    // frontier model from somebody's fine-tune.
+    expect(find("anthropic/claude-sonnet-5")?.subProvider).toBe("Anthropic");
+    expect(find("moonshotai/kimi-k3")?.subProvider).toBe("Moonshot AI");
+  });
+
+  it("stays quiet when the model's own name already opens with the vendor", () => {
+    // The picker strips a leading vendor word off the label, so claiming
+    // "DeepSeek" here turned "DeepSeek V4 Pro" into a row reading "V4 Pro",
+    // which names nothing. Seen in the running app, not reasoned about.
+    expect(find("deepseek/deepseek-v4-pro")?.subProvider).toBeUndefined();
+    expect(find("deepseek/deepseek-v4-pro")?.name).toBe("DeepSeek V4 Pro");
+  });
+
+  it("shows the vendor when it is a different word from the model family", () => {
+    // "GLM 4.7" does not start with "Z.ai", so both fit without repetition.
+    const glm = snapshot({ backend: "cerebras" }).models.find((m) => m.slug === "zai-glm-4.7");
+    expect(glm?.subProvider).toBe("Z.ai");
+  });
+
+  it("leaves a hand-typed model unlabelled rather than guessing", () => {
+    const custom = snapshot({ defaultModel: "my-fine-tune" }).models.find(
+      (model) => model.slug === "my-fine-tune",
+    );
+    expect(custom?.subProvider).toBeUndefined();
+  });
+});
+
 describe("reasoning picker", () => {
   it("offers the reasoning control on models the catalogue vouches for", () => {
     const sonnet = snapshot().models.find((model) => model.slug === "claude-sonnet-5");

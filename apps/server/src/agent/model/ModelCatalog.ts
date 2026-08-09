@@ -22,6 +22,16 @@ export interface CatalogModel {
   readonly label: string;
   readonly contextWindow: number;
   /**
+   * Who actually built the model, when that is not the backend serving it.
+   *
+   * Only meaningful for an aggregator: an OpenRouter instance serves Anthropic,
+   * OpenAI, Google and half a dozen others, and a list that does not say so is
+   * a wall of names with no way to tell a frontier model from a fine-tune. The
+   * picker renders it under the model as "<instance> · <vendor>", and uses it
+   * to strip a redundant vendor prefix off the label.
+   */
+  readonly vendor?: string;
+  /**
    * The efforts this model honours, weakest first, or absent for a model that
    * does not reason (or that we cannot vouch for). Absent means no picker: the
    * control only offers what we know the API will accept.
@@ -90,41 +100,104 @@ export const KNOWN_MODELS: Record<BackendKind, ReadonlyArray<CatalogModel>> = {
       reasoningEfforts: ["low", "medium", "high"],
     },
   ],
+  // One key, most of the frontier. Ordered best-first because the picker shows
+  // this order and the first few are all most people ever scroll past.
+  //
+  // Every entry carries a `vendor`, which is what makes a list this long
+  // readable: the row reads "Claude Sonnet 5 / T3 Agent · Anthropic" instead of
+  // leaving the user to decode a slug. It is also load-bearing for the label —
+  // the picker strips a leading vendor word, so "Anthropic" here is what keeps
+  // a future "Anthropic Claude 5.5" from rendering the word twice.
   openrouter: [
+    {
+      id: "anthropic/claude-opus-5",
+      label: "Claude Opus 5",
+      vendor: "Anthropic",
+      contextWindow: 200_000,
+      reasoningEfforts: OPENROUTER_EFFORTS,
+    },
     {
       id: "anthropic/claude-sonnet-5",
       label: "Claude Sonnet 5",
+      vendor: "Anthropic",
       contextWindow: 200_000,
       reasoningEfforts: OPENROUTER_EFFORTS,
     },
     {
       id: "openai/gpt-5.1",
       label: "GPT-5.1",
+      vendor: "OpenAI",
+      contextWindow: 400_000,
+      reasoningEfforts: OPENAI_EFFORTS,
+    },
+    {
+      id: "openai/gpt-5.1-mini",
+      label: "GPT-5.1 mini",
+      vendor: "OpenAI",
       contextWindow: 400_000,
       reasoningEfforts: OPENAI_EFFORTS,
     },
     {
       id: "google/gemini-3-pro",
       label: "Gemini 3 Pro",
+      vendor: "Google",
+      contextWindow: 1_048_576,
+      reasoningEfforts: OPENROUTER_EFFORTS,
+    },
+    {
+      id: "google/gemini-3-flash",
+      label: "Gemini 3 Flash",
+      vendor: "Google",
       contextWindow: 1_048_576,
       reasoningEfforts: OPENROUTER_EFFORTS,
     },
     {
       id: "moonshotai/kimi-k3",
       label: "Kimi K3",
-      contextWindow: 1_048_576,
-      reasoningEfforts: OPENROUTER_EFFORTS,
-    },
-    {
-      id: "deepseek/deepseek-v4-flash",
-      label: "DeepSeek V4 Flash",
+      vendor: "Moonshot AI",
       contextWindow: 1_048_576,
       reasoningEfforts: OPENROUTER_EFFORTS,
     },
     {
       id: "deepseek/deepseek-v4-pro",
       label: "DeepSeek V4 Pro",
+      vendor: "DeepSeek",
       contextWindow: 1_048_576,
+      reasoningEfforts: OPENROUTER_EFFORTS,
+    },
+    {
+      id: "deepseek/deepseek-v4-flash",
+      label: "DeepSeek V4 Flash",
+      vendor: "DeepSeek",
+      contextWindow: 1_048_576,
+      reasoningEfforts: OPENROUTER_EFFORTS,
+    },
+    {
+      id: "qwen/qwen3.8",
+      label: "Qwen 3.8",
+      vendor: "Alibaba",
+      contextWindow: 262_144,
+      reasoningEfforts: OPENROUTER_EFFORTS,
+    },
+    {
+      id: "qwen/qwen3-coder-480b",
+      label: "Qwen3 Coder 480B",
+      vendor: "Alibaba",
+      contextWindow: 262_144,
+      reasoningEfforts: OPENROUTER_EFFORTS,
+    },
+    {
+      id: "minimax/minimax-m2.5",
+      label: "MiniMax M2.5",
+      vendor: "MiniMax",
+      contextWindow: 204_800,
+      reasoningEfforts: OPENROUTER_EFFORTS,
+    },
+    {
+      id: "z-ai/glm-5.1",
+      label: "GLM 5.1",
+      vendor: "Z.ai",
+      contextWindow: 202_752,
       reasoningEfforts: OPENROUTER_EFFORTS,
     },
   ],
@@ -147,6 +220,7 @@ export const KNOWN_MODELS: Record<BackendKind, ReadonlyArray<CatalogModel>> = {
     {
       id: "zai-glm-4.7",
       label: "GLM 4.7",
+      vendor: "Z.ai",
       contextWindow: 64_000,
       // Reasons by default; `none` is the only thing it lets you say about it.
       reasoningEfforts: ["none"],
@@ -154,6 +228,7 @@ export const KNOWN_MODELS: Record<BackendKind, ReadonlyArray<CatalogModel>> = {
     {
       id: "gpt-oss-120b",
       label: "GPT-OSS 120B",
+      vendor: "OpenAI",
       contextWindow: 65_000,
       // No `none`: this one always reasons.
       reasoningEfforts: ["low", "medium", "high"],
@@ -161,6 +236,7 @@ export const KNOWN_MODELS: Record<BackendKind, ReadonlyArray<CatalogModel>> = {
     {
       id: "gemma-4-31b",
       label: "Gemma 4 31B",
+      vendor: "Google",
       contextWindow: 65_000,
       reasoningEfforts: ["none", "low", "medium", "high"],
     },
