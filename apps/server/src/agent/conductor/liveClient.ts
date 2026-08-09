@@ -21,7 +21,11 @@
  *
  * @module agent/conductor/liveClient
  */
-import type { DispatchableClientOrchestrationCommand, ThreadId } from "@t3tools/contracts";
+import type {
+  DispatchableClientOrchestrationCommand,
+  ServerProviderAuth,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -49,6 +53,25 @@ const describe = (cause: Cause.Cause<unknown>): string => {
   const pretty = Cause.pretty(cause).split("\n    at ")[0]?.trim() ?? "";
   return pretty === "" ? "the command was rejected" : pretty;
 };
+
+/**
+ * Whether an instance bills per token or draws on something already paid for.
+ *
+ * Read from how it authenticates, because that is what actually decides it —
+ * and the same driver goes either way. A Codex instance signed in to a ChatGPT
+ * subscription costs nothing per delegation; the same driver holding an API key
+ * bills every token. Anything we cannot read is `unknown` rather than assumed
+ * free, since guessing wrong in that direction is what spends a user's money.
+ */
+function billingOf(auth: ServerProviderAuth): ProviderSummary["billing"] {
+  if (auth.status !== "authenticated") {
+    return "unknown";
+  }
+  if (auth.type === "api-key") {
+    return "per-token";
+  }
+  return auth.type === undefined ? "unknown" : "subscription";
+}
 
 const truncate = (text: string): string =>
   text.length <= MAX_MESSAGE_CHARS ? text : `${text.slice(0, MAX_MESSAGE_CHARS)}… [truncated]`;
@@ -85,6 +108,7 @@ export const makeLiveOrchestrationClient = Effect.gen(function* () {
         // which is narrower than the snapshot's several near-ready states.
         available: provider.enabled && provider.installed && provider.status === "ready",
         defaultModel: provider.models.find((model) => model.isDefault)?.slug ?? null,
+        billing: billingOf(provider.auth),
       })),
   );
 
