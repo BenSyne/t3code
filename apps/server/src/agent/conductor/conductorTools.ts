@@ -362,9 +362,17 @@ const delegate = (context: ConductorContext): AgentTool =>
             ? {}
             : { options: [{ id: "reasoningEffort", value: effortSent }] }),
         },
-        // Delegated work runs unattended by definition — nobody is watching it
-        // to answer a prompt — so it runs in the mode that does not raise them.
-        runtimeMode: "auto" satisfies RuntimeMode,
+        // Delegated work runs unattended by definition — nobody is there to
+        // answer a prompt — so it runs in the mode that does not raise any.
+        // This is also T3 Code's own default for new threads.
+        //
+        // `auto` was the obvious choice and was wrong twice over. It still
+        // prompts on destructive commands, which unattended means blocking
+        // forever rather than staying safe; and the Claude adapter maps it to
+        // a permission mode named "auto" that the CLI rejects mid-session, so
+        // every Claude delegation died on `turn/setPermissionMode`. Normal
+        // threads never hit that because they default to full-access.
+        runtimeMode: "full-access" satisfies RuntimeMode,
         interactionMode: "default",
         branch: null,
         worktreePath: null,
@@ -385,7 +393,7 @@ const delegate = (context: ConductorContext): AgentTool =>
           text: params.task,
           attachments: [],
         },
-        runtimeMode: "auto" satisfies RuntimeMode,
+        runtimeMode: "full-access" satisfies RuntimeMode,
         interactionMode: "default",
         createdAt: yield* context.nowIso,
       });
@@ -594,7 +602,7 @@ const sendToThread = (context: ConductorContext): AgentTool =>
         // modes, not these. That is the property that makes this tool safe to
         // point at a thread the user configured: a follow-up cannot quietly
         // change what that thread is allowed to do.
-        runtimeMode: "auto" satisfies RuntimeMode,
+        runtimeMode: "full-access" satisfies RuntimeMode,
         interactionMode: "default",
         createdAt: yield* context.nowIso,
       });
