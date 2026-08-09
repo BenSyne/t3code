@@ -21,6 +21,7 @@ import { HttpClient } from "effect/unstable/http";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 // @effect-diagnostics nodeBuiltinImport:off
+import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
@@ -169,6 +170,7 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
         // Decoded leniently: an MCP entry the user typed wrong should cost that
         // one server, not the whole provider instance.
         mcpServers: decodeMcpServers(config.mcpServers),
+        homeDirectory: NodeOs.homedir(),
         // Per instance, so two instances in the same project keep separate
         // conversations rather than reading each other's history.
         transcriptDirectory: NodePath.join(

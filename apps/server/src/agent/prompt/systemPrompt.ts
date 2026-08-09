@@ -19,6 +19,8 @@ export interface SystemPromptInput {
   readonly projectContext: string;
   /** Names of the tools actually available this turn. */
   readonly toolNames: ReadonlyArray<string>;
+  /** One line per available skill. Empty when the project has none. */
+  readonly skillCatalog?: string | undefined;
 }
 
 const BASE = `You are the built-in coding agent in T3 Code, working in a real repository on the user's machine.
@@ -49,6 +51,10 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
   if (input.toolNames.length > 0) {
     sections.push(`Available tools: ${input.toolNames.join(", ")}.`);
+  }
+
+  if (input.skillCatalog !== undefined && input.skillCatalog.trim() !== "") {
+    sections.push(input.skillCatalog);
   }
 
   if (input.projectContext.trim() !== "") {
