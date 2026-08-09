@@ -42,6 +42,15 @@ export interface ConductorContext {
   /** Threads this agent has started and not yet seen finish. */
   readonly runningThreads: () => number;
   readonly noteStarted: (threadId: ThreadId) => void;
+  /**
+   * Whether this agent started that thread.
+   *
+   * In memory and per instance, so it forgets across a restart. That failure
+   * direction is deliberate: forgetting means refusing something it could have
+   * done, which the user can undo by asking again, where the opposite would
+   * mean answering for them in a conversation it was never part of.
+   */
+  readonly didStart: (threadId: ThreadId) => boolean;
 }
 
 const listProviders = (context: ConductorContext): AgentTool =>
@@ -182,7 +191,9 @@ const listThreads = (context: ConductorContext): AgentTool =>
         "List the recent threads in a project — including ones you did not start — so you can " +
         "read what another agent is doing or has already done. `lifecycle` is where the thread " +
         "sits in the user's inbox (active, settled, snoozed, pinned, archived) and `isRunning` " +
-        "is whether a turn is in flight. Pair with read_delegated_thread or set_thread_state.",
+        "is whether a turn is in flight. `awaitingInput` or `awaitingApproval` means it has " +
+        "stopped and is waiting on a person — it will not move until someone answers, so polling " +
+        "it is pointless. Pair with read_delegated_thread or set_thread_state.",
       parameters: Schema.Struct({
         projectId: Schema.String.annotate({ description: "From list_projects." }),
       }),
@@ -196,6 +207,8 @@ const listThreads = (context: ConductorContext): AgentTool =>
             updatedAt: Schema.String,
             lifecycle: Schema.String,
             isRunning: Schema.Boolean,
+            awaitingInput: Schema.Boolean,
+            awaitingApproval: Schema.Boolean,
           }),
         ),
         /** Present only when older threads were left out. */
@@ -219,6 +232,8 @@ const listThreads = (context: ConductorContext): AgentTool =>
           updatedAt: thread.updatedAt,
           lifecycle: thread.lifecycle,
           isRunning: thread.isRunning,
+          awaitingInput: thread.awaitingInput,
+          awaitingApproval: thread.awaitingApproval,
         })),
         ...(omitted > 0 ? { omitted } : {}),
       };
@@ -499,6 +514,231 @@ const renameThread = (context: ConductorContext): AgentTool =>
     }),
   );
 
+/**
+ * A follow-up on a thread that already exists.
+ *
+ * Without this, delegation was one-shot: `delegate_to_agent` always mints a new
+ * thread, so "tell Codex it got that null check wrong" meant starting again
+ * with none of the context the correction depends on. Supervising work is the
+ * point of orchestrating it, and supervision is a second message.
+ */
+const sendToThread = (context: ConductorContext): AgentTool =>
+  defineTool(
+    Tool.make("send_to_thread", {
+      description:
+        "Send a follow-up message to a thread that already exists, keeping everything it has " +
+        "already done. Use this to correct or extend work rather than starting a fresh " +
+        "delegation, which would lose the context. For a question the thread is blocked on, use " +
+        "answer_thread_question instead.",
+      parameters: Schema.Struct({
+        threadId: Schema.String.annotate({
+          description: "From delegate_to_agent or list_threads.",
+        }),
+        message: Schema.String.annotate({ description: "What to say to that agent." }),
+      }),
+      success: Schema.Struct({ sent: Schema.Boolean }),
+      failure: ToolFailure,
+      failureMode: "return",
+    }),
+    Effect.fnUntraced(function* (params) {
+      const message = params.message.trim();
+      if (message === "") {
+        return yield* toolFailure("There is no point sending an empty message.");
+      }
+      const threadId = ThreadId.make(params.threadId);
+      const thread = yield* context.client.getThread(threadId);
+      if (thread === undefined) {
+        return yield* toolFailure(
+          `No thread with id "${params.threadId}". Call list_threads first.`,
+        );
+      }
+      // Refused rather than queued: what a second turn does to a thread already
+      // mid-turn is the provider's business and they do not agree — some steer,
+      // some reject, some quietly drop it. Waiting is the one behaviour that
+      // means the same thing everywhere.
+      if (thread.isRunning) {
+        return yield* toolFailure(
+          "That thread is mid-turn. Wait for it to finish, or stop it first with stop_delegated_thread.",
+        );
+      }
+      if (thread.awaitingInput) {
+        return yield* toolFailure(
+          "That thread is blocked on a question. Read it, then answer with answer_thread_question — an ordinary message will not unblock it.",
+        );
+      }
+
+      const result = yield* context.client.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make(yield* context.nextId),
+        threadId,
+        message: {
+          messageId: MessageId.make(yield* context.nextId),
+          role: "user",
+          text: message,
+          attachments: [],
+        },
+        runtimeMode: "auto" satisfies RuntimeMode,
+        interactionMode: "default",
+        createdAt: yield* context.nowIso,
+      });
+      if (!result.accepted) {
+        return yield* toolFailure(`Could not send that: ${result.detail ?? "rejected"}`);
+      }
+      context.noteStarted(threadId);
+      return { sent: true };
+    }),
+  );
+
+/**
+ * Answering a question a delegated thread is stuck on.
+ *
+ * Restricted to threads this agent started, and — unlike the claim that used to
+ * sit on `stop_delegated_thread` — actually enforced. The distinction is real:
+ * settling or stopping a thread is neutral and reversible, while an answer is
+ * put into the user's mouth and acted on. In a thread the agent wrote the task
+ * for, it is the best-placed party to say what it meant. In one it has never
+ * seen, it would be guessing on someone else's behalf.
+ */
+const answerQuestion = (context: ConductorContext): AgentTool =>
+  defineTool(
+    Tool.make("answer_thread_question", {
+      description:
+        "Answer a question a thread you started is blocked on. read_delegated_thread shows the " +
+        "request id, the question ids, and the exact option labels. Answer with those labels " +
+        "verbatim — a value that is not one of them will be rejected. Only answer what the task " +
+        "you set actually settles; if the question needs the user's judgement, ask them instead.",
+      parameters: Schema.Struct({
+        threadId: Schema.String,
+        requestId: Schema.String.annotate({ description: "From read_delegated_thread." }),
+        answers: Schema.Record(
+          Schema.String,
+          // A union because the two kinds of question take different shapes:
+          // a single-choice answer is one label, a multi-select is the list.
+          // Typed as string-only, every multi-select question would have been
+          // unanswerable.
+          Schema.Union([Schema.String, Schema.Array(Schema.String)]),
+        ).annotate({
+          description:
+            "Question id to the chosen option label. Use a list of labels for a question marked " +
+            "'choose one or more', a single label otherwise.",
+        }),
+      }),
+      success: Schema.Struct({ answered: Schema.Boolean }),
+      failure: ToolFailure,
+      failureMode: "return",
+    }),
+    Effect.fnUntraced(function* (params) {
+      const threadId = ThreadId.make(params.threadId);
+      if (!context.didStart(threadId)) {
+        return yield* toolFailure(
+          "You can only answer questions on threads you started. Tell the user what this one is asking and let them answer it.",
+        );
+      }
+      const pending = yield* context.client.pendingInput(threadId);
+      const request = pending.find((entry) => entry.requestId === params.requestId);
+      if (request === undefined) {
+        return yield* toolFailure(
+          pending.length === 0
+            ? "That thread is not waiting on a question."
+            : `No pending request "${params.requestId}". Open ones: ${pending.map((entry) => entry.requestId).join(", ")}.`,
+        );
+      }
+      // Checked here so a wrong shape is a sentence the model can act on
+      // rather than a rejection from a provider that only says "invalid".
+      const missing = request.questions
+        .filter((question) => params.answers[question.id] === undefined)
+        .map((question) => question.id);
+      if (missing.length > 0) {
+        return yield* toolFailure(
+          `Every question needs an answer. Missing: ${missing.join(", ")}.`,
+        );
+      }
+      // Labels are matched exactly because that is what the provider matches
+      // on. A near-miss — right idea, reworded — is rejected downstream with a
+      // message that does not say which value was wrong.
+      for (const question of request.questions) {
+        const given = params.answers[question.id];
+        const chosen = Array.isArray(given) ? given : [given];
+        if (!question.multiSelect && chosen.length > 1) {
+          return yield* toolFailure(`"${question.id}" takes a single answer, not several.`);
+        }
+        if (question.options.length === 0) {
+          continue;
+        }
+        const unknown = chosen.filter((label) => !question.options.includes(label as string));
+        if (unknown.length > 0) {
+          return yield* toolFailure(
+            `"${unknown.join('", "')}" is not an option for "${question.id}". Use one of: ${question.options.join(", ")}.`,
+          );
+        }
+      }
+
+      const result = yield* context.client.dispatch({
+        type: "thread.user-input.respond",
+        commandId: CommandId.make(yield* context.nextId),
+        threadId,
+        requestId: ApprovalRequestId.make(params.requestId),
+        answers: params.answers,
+        createdAt: yield* context.nowIso,
+      });
+      if (!result.accepted) {
+        return yield* toolFailure(`Could not answer: ${result.detail ?? "rejected"}`);
+      }
+      return { answered: true };
+    }),
+  );
+
+const createProject = (context: ConductorContext): AgentTool =>
+  defineTool(
+    Tool.make("create_project", {
+      description:
+        "Add a project to T3 Code for a directory on this machine, so threads can be started in " +
+        "it. Check list_projects first — a directory that is already a project does not need a " +
+        "second one.",
+      parameters: Schema.Struct({
+        title: Schema.String.annotate({ description: "What to call it in the sidebar." }),
+        workspaceRoot: Schema.String.annotate({
+          description: "Absolute path to the directory. It must already exist.",
+        }),
+      }),
+      success: Schema.Struct({ projectId: Schema.String }),
+      failure: ToolFailure,
+      failureMode: "return",
+    }),
+    Effect.fnUntraced(function* (params) {
+      const title = params.title.trim();
+      const workspaceRoot = params.workspaceRoot.trim();
+      if (title === "" || workspaceRoot === "") {
+        return yield* toolFailure("A project needs both a title and a directory.");
+      }
+      const existing = yield* context.client.listProjects;
+      const already = existing.find((project) => project.workspaceRoot === workspaceRoot);
+      if (already !== undefined) {
+        // Reported as a success rather than an error: the caller wanted a
+        // project for that directory and there is one, so handing back its id
+        // is the useful answer and a duplicate is not.
+        return { projectId: String(already.id) };
+      }
+
+      const projectId = ProjectId.make(yield* context.nextId);
+      const result = yield* context.client.dispatch({
+        type: "project.create",
+        commandId: CommandId.make(yield* context.nextId),
+        projectId,
+        title,
+        workspaceRoot,
+        // Never creates the directory. A mistyped path should fail loudly, not
+        // leave an empty folder somewhere in the user's filesystem.
+        createWorkspaceRootIfMissing: false,
+        createdAt: yield* context.nowIso,
+      });
+      if (!result.accepted) {
+        return yield* toolFailure(`Could not create that project: ${result.detail ?? "rejected"}`);
+      }
+      return { projectId: String(projectId) };
+    }),
+  );
+
 const stopDelegated = (context: ConductorContext): AgentTool =>
   defineTool(
     Tool.make("stop_delegated_thread", {
@@ -610,8 +850,11 @@ export function conductorContributor(context: ConductorContext | null): ToolCont
               listModels(context),
               listProjects(context),
               listThreads(context),
+              createProject(context),
               delegate(context),
+              sendToThread(context),
               readDelegated(context),
+              answerQuestion(context),
               setThreadState(context),
               renameThread(context),
               stopDelegated(context),

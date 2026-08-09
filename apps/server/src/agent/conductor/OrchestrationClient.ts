@@ -28,6 +28,7 @@ import type {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
+import type { PendingUserInput } from "./pendingRequests.ts";
 import type { ThreadLifecycle } from "./threadLifecycle.ts";
 
 /** What the agent can see about a thread it did not start. */
@@ -52,6 +53,17 @@ export interface ThreadSummary {
    * because that is the field that actually decides whether work is running.
    */
   readonly isRunning: boolean;
+  /**
+   * Whether the thread has stopped and is waiting on a person.
+   *
+   * Separate from `isRunning` because they are not opposites and the
+   * difference is the whole point: a blocked thread is idle *and* unfinished,
+   * and reads as "working" to anything that only looks at status. Without
+   * these the only available move on a thread that asked a question is to poll
+   * it forever.
+   */
+  readonly awaitingInput: boolean;
+  readonly awaitingApproval: boolean;
 }
 
 /**
@@ -146,4 +158,6 @@ export interface OrchestrationClient {
   readonly getThread: (threadId: ThreadId) => Effect.Effect<ThreadSummary | undefined>;
   /** The transcript of a thread, as text the model can read. */
   readonly readThread: (threadId: ThreadId) => Effect.Effect<string>;
+  /** The questions a thread is blocked on, if any. */
+  readonly pendingInput: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<PendingUserInput>>;
 }

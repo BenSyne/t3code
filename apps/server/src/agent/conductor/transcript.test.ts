@@ -77,6 +77,54 @@ describe("rendering a thread for another agent", () => {
     expect(output.length).toBeLessThan(3_000);
   });
 
+  it("says a blocked thread is blocked, and what it is asking", () => {
+    // The whole reason this block exists: a thread waiting for an answer looks
+    // identical to one that is working, so the only other move is to poll
+    // something that will never change.
+    const output = render({
+      pending: [
+        {
+          requestId: "req-1",
+          questions: [
+            {
+              id: "which-file",
+              question: "Which file?",
+              options: ["a.ts", "b.ts"],
+              multiSelect: false,
+            },
+          ],
+        },
+      ],
+    });
+    expect(output).toContain("blocked waiting for an answer");
+    expect(output).toContain("request req-1");
+    expect(output).toContain("which-file: Which file? [a.ts | b.ts]");
+  });
+
+  it("marks a free-text question as such, since there is no label to echo", () => {
+    const output = render({
+      pending: [
+        {
+          requestId: "req-1",
+          questions: [{ id: "why", question: "Why?", options: [], multiSelect: false }],
+        },
+      ],
+    });
+    expect(output).toContain("(free text)");
+  });
+
+  it("says a question it could not read is still blocking", () => {
+    // Silence here would hide the block, which is worse than reporting it
+    // with no detail.
+    const output = render({ pending: [{ requestId: "req-1", questions: [] }] });
+    expect(output).toContain("blocked waiting for an answer");
+    expect(output).toContain("could not be read");
+  });
+
+  it("adds nothing when the thread is not blocked", () => {
+    expect(render({ pending: [] })).not.toContain("blocked");
+  });
+
   it("says plainly when a thread has produced nothing", () => {
     // An empty string here reads to the model as a tool that failed.
     expect(render({})).toContain("Nothing has happened in this thread yet.");
