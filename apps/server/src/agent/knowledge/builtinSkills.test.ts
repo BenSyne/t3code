@@ -134,3 +134,15 @@ describe("the routing skill", () => {
     }
   });
 });
+
+describe("the routing skill on what it cannot do", () => {
+  const body = BUILTIN_SKILLS.find((skill) => skill.name === "t3-choosing-an-agent")?.body ?? "";
+
+  it("says plainly that nothing wakes it when a delegation finishes", () => {
+    // Observed live: it told the user "I'll keep an eye on it" and then had no
+    // mechanism to do so. A promise the system cannot keep is worse than a
+    // missing feature — the user waits for a message that never comes.
+    expect(body).toContain("You will not be told when a delegated thread finishes");
+    expect(body).toMatch(/never say you will watch/i);
+  });
+});

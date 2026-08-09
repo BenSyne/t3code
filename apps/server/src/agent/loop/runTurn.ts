@@ -140,6 +140,7 @@ export const runTurn = Effect.fn("t3agent/runTurn")(function* (input: RunTurnInp
       toolkit: input.toolkit,
       emitter: input.emitter,
       stepIndex: tally.steps,
+      isInterrupted: input.isInterrupted,
     });
 
     // From the parts, not from the text we rendered: tool calls and results
@@ -206,6 +207,7 @@ const runStep = Effect.fnUntraced(function* (input: {
   readonly toolkit: AgentToolkit;
   readonly emitter: TurnEmitter;
   readonly stepIndex: number;
+  readonly isInterrupted: () => boolean;
 }) {
   const parts: Array<Response.AnyPart> = [];
   const textChunks: Array<string> = [];
@@ -229,7 +231,17 @@ const runStep = Effect.fnUntraced(function* (input: {
   });
 
   yield* Stream.runForEach(
-    LanguageModel.streamText({ prompt: input.prompt, toolkit: input.toolkit }),
+    // Stop pulling the moment Stop is pressed, rather than at the end of the
+    // step. The decision to end the turn is made after a step completes, and a
+    // step is a whole model response plus its tool calls — so without this the
+    // first press did nothing visible for as long as the model kept talking,
+    // and the only way to get a reaction was to press again and hard-kill the
+    // fiber. Everything already streamed is kept: this ends the step early, it
+    // does not discard it.
+    Stream.takeWhile(
+      LanguageModel.streamText({ prompt: input.prompt, toolkit: input.toolkit }),
+      () => !input.isInterrupted(),
+    ),
     (part) =>
       Effect.gen(function* () {
         parts.push(part as Response.AnyPart);
