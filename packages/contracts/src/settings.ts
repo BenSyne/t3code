@@ -501,7 +501,7 @@ export const T3AgentSettings = makeProviderSettingsSchema(
       Schema.annotateKey({
         title: "API key variable",
         description:
-          "Name of the environment variable holding the API key. Set its value below, where it is stored as a secret rather than in settings.",
+          "Name of the environment variable holding the API key. Set its value in Environment variables above, marked sensitive, so it is stored as a secret rather than in settings.",
         providerSettingsForm: {
           placeholder: "ANTHROPIC_API_KEY",
           clearWhenEmpty: "omit",
