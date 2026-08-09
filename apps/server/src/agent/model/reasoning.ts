@@ -66,3 +66,39 @@ export function asReasoningEffort(value: string | undefined): ReasoningEffort | 
     ? (value as ReasoningEffort)
     : undefined;
 }
+
+/** The id every provider uses for the reasoning control in its option descriptors. */
+export const REASONING_EFFORT_OPTION_ID = "reasoningEffort";
+
+/**
+ * Which efforts a specific model will accept.
+ *
+ * Read from the model's own option descriptors — the same list the picker
+ * renders — rather than assumed from the provider, because a lineup routinely
+ * mixes models that take the full range with models that take none. An empty
+ * result means the model exposes no reasoning control at all, which is
+ * different from "we do not know" and should be reported as such: sending an
+ * effort to one of those does nothing, quietly.
+ *
+ * The "default" choice is filtered out. It is a picker affordance meaning
+ * "send nothing", not a level anyone can ask for.
+ */
+export function reasoningEffortsFor(
+  capabilities: { readonly optionDescriptors?: ReadonlyArray<unknown> | undefined } | null,
+): ReadonlyArray<ReasoningEffort> {
+  const descriptor = capabilities?.optionDescriptors?.find(
+    (candidate): candidate is { readonly id: string; readonly type: string } =>
+      typeof candidate === "object" &&
+      candidate !== null &&
+      (candidate as { id?: unknown }).id === REASONING_EFFORT_OPTION_ID,
+  );
+  if (descriptor === undefined || descriptor.type !== "select") {
+    return [];
+  }
+  const options = (descriptor as { readonly options?: ReadonlyArray<unknown> }).options ?? [];
+  return options.flatMap((option) => {
+    const id = (option as { id?: unknown }).id;
+    const effort = typeof id === "string" ? asReasoningEffort(id) : undefined;
+    return effort === undefined ? [] : [effort];
+  });
+}

@@ -35,7 +35,13 @@ import * as Option from "effect/Option";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderSnapshotStore } from "../../provider/Services/ProviderSnapshotStore.ts";
-import type { OrchestrationClient, ProviderSummary, ThreadSummary } from "./OrchestrationClient.ts";
+import { reasoningEffortsFor } from "../model/reasoning.ts";
+import type {
+  ModelSummary,
+  OrchestrationClient,
+  ProviderSummary,
+  ThreadSummary,
+} from "./OrchestrationClient.ts";
 import { lifecycleOf } from "./threadLifecycle.ts";
 import { renderTranscript } from "./transcript.ts";
 
@@ -107,6 +113,21 @@ export const makeLiveOrchestrationClient = Effect.gen(function* () {
         billing: billingOf(provider.auth),
       })),
   );
+
+  const listModels: OrchestrationClient["listModels"] = (instanceId) =>
+    Effect.map(providerSnapshots.get, (providers): ReadonlyArray<ModelSummary> => {
+      const instance = providers.find((provider) => String(provider.instanceId) === instanceId);
+      return (instance?.models ?? []).map((model) => ({
+        slug: model.slug,
+        name: model.name,
+        isDefault: model.isDefault === true,
+        isLegacy: model.isLegacy === true,
+        // The same field the picker labels aggregated models by, so the agent
+        // and the user are looking at the same "who actually made this".
+        vendor: model.subProvider ?? null,
+        reasoningEfforts: reasoningEffortsFor(model.capabilities),
+      }));
+    });
 
   /**
    * The navigation-level model.
@@ -191,6 +212,7 @@ export const makeLiveOrchestrationClient = Effect.gen(function* () {
   return {
     dispatch,
     listProviders,
+    listModels,
     listProjects,
     listThreads,
     getThread,

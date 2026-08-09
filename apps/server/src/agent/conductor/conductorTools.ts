@@ -50,7 +50,9 @@ const listProviders = (context: ConductorContext): AgentTool =>
       description:
         "List the coding agents available in T3 Code, so you can choose one to delegate to. " +
         "Read `billing` before choosing: 'subscription' means the user has already paid for " +
-        "that agent's capacity, 'per-token' means each delegation adds to a bill.",
+        "that agent's capacity, 'per-token' means each delegation adds to a bill. " +
+        "`defaultModel` is what a delegation uses when you name none; call list_models to see " +
+        "the rest.",
       parameters: Schema.Struct({}),
       success: Schema.Struct({
         providers: Schema.Array(
@@ -78,6 +80,61 @@ const listProviders = (context: ConductorContext): AgentTool =>
           billing: provider.billing,
         })),
       })),
+  );
+
+/**
+ * What an instance can actually be pointed at.
+ *
+ * Its own tool rather than a field on `list_providers`, because a workspace
+ * with a couple of aggregator instances has hundreds of models between them
+ * and "who can I delegate to" is asked far more often than "and on which
+ * model". This is the call that stops the agent guessing a slug: before it
+ * existed, asked which model to use it either invented a plausible name or
+ * hedged about what the user's picker showed, having no way to look.
+ */
+const listModels = (context: ConductorContext): AgentTool =>
+  defineTool(
+    Tool.make("list_models", {
+      description:
+        "List the models one agent can be pointed at, with the reasoning levels each of them " +
+        "accepts. Call this before naming a model in delegate_to_agent — never guess a slug, and " +
+        "never describe a model you have not seen here. `reasoningEfforts` is per model: an empty " +
+        "list means that model has no reasoning control, so passing one does nothing.",
+      parameters: Schema.Struct({
+        providerInstanceId: Schema.String.annotate({ description: "From list_providers." }),
+      }),
+      success: Schema.Struct({
+        models: Schema.Array(
+          Schema.Struct({
+            slug: Schema.String,
+            name: Schema.String,
+            isDefault: Schema.Boolean,
+            isLegacy: Schema.Boolean,
+            vendor: Schema.NullOr(Schema.String),
+            reasoningEfforts: Schema.Array(Schema.String),
+          }),
+        ),
+      }),
+      failure: ToolFailure,
+      failureMode: "return",
+    }),
+    Effect.fnUntraced(function* (params) {
+      const models = yield* context.client.listModels(params.providerInstanceId);
+      if (models.length === 0) {
+        // Distinguished from an empty answer: "no models" and "no such
+        // instance" would otherwise both read as "that agent has nothing".
+        const providers = yield* context.client.listProviders;
+        const known = providers.some(
+          (provider) => String(provider.instanceId) === params.providerInstanceId,
+        );
+        if (!known) {
+          return yield* toolFailure(
+            `No provider with id "${params.providerInstanceId}". Call list_providers first.`,
+          );
+        }
+      }
+      return { models: models.map((model) => ({ ...model })) };
+    }),
   );
 
 const listProjects = (context: ConductorContext): AgentTool =>
@@ -239,6 +296,26 @@ const delegate = (context: ConductorContext): AgentTool =>
         return yield* toolFailure(
           `${target.displayName} has no default model. Pass one explicitly.`,
         );
+      }
+
+      // Checked against the chosen model, not just the global vocabulary: a
+      // lineup mixes models that take the full range with models that take a
+      // subset, and an effort outside the subset is rejected by the provider
+      // at the first request — which reaches the user as a delegation that
+      // failed for no stated reason. Only enforced where the model actually
+      // advertises a set; an empty one means "not advertised", not "none
+      // allowed", and refusing on that would break every driver that does not
+      // publish descriptors.
+      if (effort !== undefined) {
+        const models = yield* context.client.listModels(params.providerInstanceId);
+        const chosen = models.find((candidate) => candidate.slug === model);
+        if (chosen !== undefined && chosen.reasoningEfforts.length > 0) {
+          if (!chosen.reasoningEfforts.includes(effort)) {
+            return yield* toolFailure(
+              `${chosen.name} does not accept "${effort}". It accepts: ${chosen.reasoningEfforts.join(", ")}.`,
+            );
+          }
+        }
       }
 
       const created = yield* context.client.dispatch({
@@ -530,6 +607,7 @@ export function conductorContributor(context: ConductorContext | null): ToolCont
           ? []
           : [
               listProviders(context),
+              listModels(context),
               listProjects(context),
               listThreads(context),
               delegate(context),
