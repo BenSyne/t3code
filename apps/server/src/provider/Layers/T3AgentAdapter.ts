@@ -243,7 +243,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         mcpContributor(pool.servers),
         subagentContributor({
           depth,
-          systemPrompt,
+          systemPrompt: () => systemPrompt,
           contextWindow: options.contextWindowFor(model),
           toolkitForDepth: (childDepth) =>
             Effect.flatMap(resolveTools(contributorsAtDepth(childDepth), toolContext), (child) =>
