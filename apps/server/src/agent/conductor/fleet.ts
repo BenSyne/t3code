@@ -5,20 +5,18 @@
  * failure mode is expensive rather than merely wrong. Every one of them exists
  * because of a specific way this feature could hurt someone.
  *
+ * There is deliberately no cap on how many threads may run at once. Swarming
+ * is the point of the feature, and a limit that bites mid-fan-out is worse
+ * than none — the agent has already spent the tokens deciding what to delegate
+ * when it discovers it cannot. What remains is the guard against unbounded
+ * *recursion*, which is a different failure: a fleet of four costs four
+ * delegations, while an agent that can start copies of itself costs whatever
+ * the stack reaches before someone notices.
+ *
  * @module agent/conductor/fleet
  */
 
-/**
- * Threads the agent may have running at once.
- *
- * Each one is a real provider session on the user's key. Four is enough for
- * "ask Codex and Claude the same question and compare", which is the case this
- * exists for, and small enough that a mistake is visible before it is costly.
- */
-export const DEFAULT_FLEET_LIMIT = 4;
-
 export interface FleetPolicy {
-  readonly limit: number;
   /**
    * May the agent target other instances of itself?
    *
@@ -39,7 +37,6 @@ export interface FleetPolicy {
 }
 
 export const DEFAULT_FLEET_POLICY: FleetPolicy = {
-  limit: DEFAULT_FLEET_LIMIT,
   allowSelfTargeting: false,
   allowApprovingRequests: false,
 };
@@ -61,16 +58,10 @@ export function checkTarget(input: {
   readonly policy: FleetPolicy;
   readonly targetDriverKind: string;
   readonly selfDriverKind: string;
-  readonly runningThreads: number;
 }): FleetRefusal {
   if (!input.policy.allowSelfTargeting && input.targetDriverKind === input.selfDriverKind) {
     return refuse(
       "Delegating to another built-in agent is turned off. Use a different provider, or do the work yourself.",
-    );
-  }
-  if (input.runningThreads >= input.policy.limit) {
-    return refuse(
-      `Already running ${input.runningThreads} delegated threads, which is the limit. Wait for one to finish.`,
     );
   }
   return allowed;

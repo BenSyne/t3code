@@ -401,8 +401,9 @@ Three states look identical from outside and are not:
 - **Running** — \`isRunning\`. Leave it alone; check again later.
 - **Blocked** — \`awaitingInput\` or \`awaitingApproval\`. It has stopped and
   will never move on its own. Polling it is wasted. Either answer the question
-  with \`answer_thread_question\`, if the task you set actually settles it, or
-  tell the user what is being asked. Approvals are the user's call.
+  with \`answer_thread_question\` when you actually know the answer, or tell the
+  user what is being asked. Answering for them when you are guessing is worse
+  than waiting. Approvals are the user's call.
 - **Finished** — neither. Read it and report.
 
 To correct or extend work, use \`send_to_thread\` rather than a fresh

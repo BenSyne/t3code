@@ -85,7 +85,8 @@ It can:
 - **Follow the work** — read a thread back, including what it actually did and anything that failed,
   not just what it said about itself.
 - **Stay with it** — send a follow-up to correct or extend work rather than starting over, answer a
-  question a thread it started is blocked on, or interrupt and revert.
+  question a thread is blocked on, or interrupt and revert. This applies to any thread in the
+  project, not only ones it started itself.
 - **Tidy up** — settle, archive, snooze, pin or rename threads, and create a project for a
   directory.
 
@@ -101,8 +102,10 @@ is how you stay in the loop; leaving it off means Theo tells you what is waiting
 for you. Answering a _question_ a thread asked is different and allowed, but only on threads Theo
 started itself — it will not put words in your mouth in a conversation it was never part of.
 
-It will run at most four delegated threads at once, and it can never delegate to another Theo
-instance — an agent that can start copies of itself is an unbounded fan-out on your bill.
+There is no cap on how many delegations run at once — swarming is the point — so a large fan-out
+spends a large amount at once on whatever keys those providers use. It can never delegate to another
+Theo instance, though: an agent that can start copies of itself is unbounded recursion rather than a
+wide fan-out, and that one does not stop.
 
 ## Permissions
 

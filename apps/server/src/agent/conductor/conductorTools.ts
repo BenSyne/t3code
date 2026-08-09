@@ -43,18 +43,6 @@ export interface ConductorContext {
   /** Fresh ids. Commands are rejected without a unique one. */
   readonly nextId: Effect.Effect<string>;
   readonly nowIso: Effect.Effect<string>;
-  /** Threads this agent has started and not yet seen finish. */
-  readonly runningThreads: () => number;
-  readonly noteStarted: (threadId: ThreadId) => void;
-  /**
-   * Whether this agent started that thread.
-   *
-   * In memory and per instance, so it forgets across a restart. That failure
-   * direction is deliberate: forgetting means refusing something it could have
-   * done, which the user can undo by asking again, where the opposite would
-   * mean answering for them in a conversation it was never part of.
-   */
-  readonly didStart: (threadId: ThreadId) => boolean;
 }
 
 const listProviders = (context: ConductorContext): AgentTool =>
@@ -296,7 +284,6 @@ const delegate = (context: ConductorContext): AgentTool =>
         policy: context.policy,
         targetDriverKind: target.driverKind,
         selfDriverKind: context.selfDriverKind,
-        runningThreads: context.runningThreads(),
       });
       if (verdict._tag === "Refused") {
         return yield* toolFailure(verdict.reason);
@@ -393,7 +380,6 @@ const delegate = (context: ConductorContext): AgentTool =>
         );
       }
 
-      context.noteStarted(threadId);
       return { threadId: String(threadId) };
     }),
   );
@@ -596,7 +582,6 @@ const sendToThread = (context: ConductorContext): AgentTool =>
       if (!result.accepted) {
         return yield* toolFailure(`Could not send that: ${result.detail ?? "rejected"}`);
       }
-      context.noteStarted(threadId);
       return { sent: true };
     }),
   );
@@ -641,11 +626,6 @@ const answerQuestion = (context: ConductorContext): AgentTool =>
     }),
     Effect.fnUntraced(function* (params) {
       const threadId = ThreadId.make(params.threadId);
-      if (!context.didStart(threadId)) {
-        return yield* toolFailure(
-          "You can only answer questions on threads you started. Tell the user what this one is asking and let them answer it.",
-        );
-      }
       const pending = yield* context.client.pendingInput(threadId);
       const request = pending.find((entry) => entry.requestId === params.requestId);
       if (request === undefined) {
