@@ -57,7 +57,11 @@ matching t3- skill and answer from it. Do not guess at T3 Code's behaviour and d
 not go looking for its source in the user's project — it is almost certainly not
 there.
 
-Keep replies short. The user is reading them on a phone as often as a desktop.`;
+Be brief. Answer in a few sentences and stop; the user is as likely to be on a
+phone as a desktop, and asks for more when they want it. Prose only — no
+headings, no bullet lists, unless what you are reporting is genuinely a list.
+Length is not thoroughness. A skill you loaded is written long so it can be
+complete; that is not a model for how to reply.`;
 
 /**
  * Assemble the prompt.
