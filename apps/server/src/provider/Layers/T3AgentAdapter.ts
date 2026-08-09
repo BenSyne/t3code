@@ -54,6 +54,7 @@ import { readProjectContext } from "../../agent/prompt/agentsMd.ts";
 import { buildSystemPrompt } from "../../agent/prompt/systemPrompt.ts";
 import { connectAll } from "../../agent/mcp/McpClientPool.ts";
 import { mcpContributor } from "../../agent/mcp/mcpTools.ts";
+import { BUILTIN_SKILLS } from "../../agent/knowledge/builtinSkills.ts";
 import { discoverSkills, skillCatalogBlock } from "../../agent/skills/discover.ts";
 import { skillContributor } from "../../agent/skills/skillTool.ts";
 import { subagentContributor } from "../../agent/subagent/taskTool.ts";
@@ -218,6 +219,16 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         homeDirectory: options.homeDirectory,
       });
 
+      // Built-in knowledge first, so a project skill of the same name wins —
+      // a repository that ships its own `t3-providers` has decided what that
+      // name should mean inside it.
+      const skills = [
+        ...BUILTIN_SKILLS.filter(
+          (builtin) => !discovered.skills.some((found) => found.name === builtin.name),
+        ),
+        ...discovered.skills,
+      ];
+
       for (const rejection of discovered.rejected) {
         yield* events.warning({
           threadId: input.threadId,
@@ -239,7 +250,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
 
       const contributorsAtDepth = (depth: number): ReadonlyArray<ToolContributor> => [
         coreTools,
-        skillContributor(discovered.skills),
+        skillContributor(skills),
         mcpContributor(pool.servers),
         subagentContributor({
           depth,
@@ -272,7 +283,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         workspaceRoot,
         projectContext: projectContext.text,
         toolNames: resolved.tools.map((entry) => entry.tool.name),
-        skillCatalog: skillCatalogBlock(discovered.skills),
+        skillCatalog: skillCatalogBlock(skills),
       });
 
       // Pick up where a previous server process left off, if it left anything.

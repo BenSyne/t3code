@@ -55,6 +55,11 @@ export function makeSkillTool(skills: ReadonlyArray<DiscoveredSkill>): AgentTool
         );
       }
 
+      // Compiled-in knowledge has its text already; only disk skills are read.
+      if (skill.body !== undefined) {
+        return { name: skill.name, instructions: clip(skill.body) };
+      }
+
       const content = yield* Effect.orElseSucceed(
         Effect.promise(() => NodeFSP.readFile(skill.location, "utf8")),
         () => null,
