@@ -61,6 +61,7 @@ import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletion
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
+import { ProviderSnapshotStoreLive } from "./provider/Services/ProviderSnapshotStore.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
@@ -376,7 +377,16 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(Keybindings.layer),
-  Layer.provideMerge(ProviderRegistryLive),
+  // Merged with the registry rather than added as its own `provideMerge` step:
+  // `.pipe()` has twenty overloads and this chain is at the limit, so a
+  // twenty-first argument silently degrades the whole graph's inferred
+  // requirements to `any` — which switches off missing-service checking
+  // everywhere rather than reporting anything. Merging keeps the arity.
+  //
+  // The store sits below the instance registry that builds the drivers, so a
+  // driver can read provider snapshots without depending on the graph that
+  // constructs drivers. See `ProviderSnapshotStore`'s module note.
+  Layer.provideMerge(Layer.provideMerge(ProviderRegistryLive, ProviderSnapshotStoreLive)),
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;

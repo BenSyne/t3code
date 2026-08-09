@@ -44,6 +44,7 @@ import {
   ProviderRegistryLive,
   selectProvidersByKind,
 } from "./ProviderRegistry.ts";
+import { ProviderSnapshotStoreLive } from "../Services/ProviderSnapshotStore.ts";
 import * as ServerConfig from "../../config.ts";
 import * as ServerSettingsModule from "../../serverSettings.ts";
 import * as UsageServiceModule from "../../usage/UsageService.ts";
@@ -877,6 +878,7 @@ it.layer(
         const runtimeServices = yield* Layer.build(
           ProviderRegistryLive.pipe(
             Layer.provideMerge(instanceRegistryLayer),
+            Layer.provideMerge(ProviderSnapshotStoreLive),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {
                 prefix: "t3-provider-registry-background-refresh-",
@@ -1032,6 +1034,7 @@ it.layer(
         const runtimeServices = yield* Layer.build(
           ProviderRegistryLive.pipe(
             Layer.provideMerge(instanceRegistryLayer),
+            Layer.provideMerge(ProviderSnapshotStoreLive),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {
                 prefix: "t3-provider-registry-merged-persist-",
@@ -1161,6 +1164,7 @@ it.layer(
           const runtimeServices = yield* Layer.build(
             ProviderRegistryLive.pipe(
               Layer.provideMerge(instanceRegistryLayer),
+              Layer.provideMerge(ProviderSnapshotStoreLive),
               Layer.provideMerge(
                 ServerConfig.layerTest(process.cwd(), {
                   prefix: "t3-provider-registry-opencode-authoritative-persist-",
@@ -1268,6 +1272,7 @@ it.layer(
         const runtimeServices = yield* Layer.build(
           ProviderRegistryLive.pipe(
             Layer.provideMerge(instanceRegistryLayer),
+            Layer.provideMerge(ProviderSnapshotStoreLive),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {
                 prefix: "t3-provider-registry-refresh-failure-",
@@ -1376,6 +1381,7 @@ it.layer(
         const runtimeServices = yield* Layer.build(
           ProviderRegistryLive.pipe(
             Layer.provideMerge(instanceRegistryLayer),
+            Layer.provideMerge(ProviderSnapshotStoreLive),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {
                 prefix: "t3-provider-registry-sync-failure-",
@@ -1469,6 +1475,7 @@ it.layer(
         yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
         const providerRegistryLayer = ProviderRegistryLive.pipe(
           Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+          Layer.provideMerge(ProviderSnapshotStoreLive),
           Layer.provideMerge(
             Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
           ),
@@ -1562,6 +1569,7 @@ it.layer(
         yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
         const providerRegistryLayer = ProviderRegistryLive.pipe(
           Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+          Layer.provideMerge(ProviderSnapshotStoreLive),
           Layer.provideMerge(
             Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
           ),
@@ -1682,6 +1690,7 @@ it.layer(
         yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
         const providerRegistryLayer = ProviderRegistryLive.pipe(
           Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+          Layer.provideMerge(ProviderSnapshotStoreLive),
           Layer.provideMerge(
             Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
           ),
@@ -1742,6 +1751,7 @@ it.layer(
         yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
         const providerRegistryLayer = ProviderRegistryLive.pipe(
           Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+          Layer.provideMerge(ProviderSnapshotStoreLive),
           Layer.provideMerge(
             Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
           ),

@@ -43,6 +43,7 @@ import * as Semaphore from "effect/Semaphore";
 import { ServerConfig } from "../../config.ts";
 import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
 import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry.ts";
+import { ProviderSnapshotStore } from "../Services/ProviderSnapshotStore.ts";
 import {
   hydrateCachedProvider,
   isCachedProviderCorrelated,
@@ -288,7 +289,12 @@ export const ProviderRegistryLive = Layer.effect(
         ),
       ),
     );
-    const providersRef = yield* Ref.make<ReadonlyArray<ServerProvider>>(cachedProviders);
+    // Held by a leaf service rather than a local Ref, so a reader that must not
+    // depend on the provider construction graph — the built-in agent, which is
+    // itself built by that graph — can still see the current snapshots. This
+    // layer remains the only writer. See ProviderSnapshotStore's module note.
+    const snapshots = yield* ProviderSnapshotStore;
+    yield* Ref.set(snapshots.ref, cachedProviders);
     const maintenanceActionStatesRef = yield* Ref.make<
       ReadonlyMap<ProviderInstanceId, { readonly update?: ServerProviderUpdateState | undefined }>
     >(new Map());
@@ -360,7 +366,7 @@ export const ProviderRegistryLive = Layer.effect(
         },
       );
       const [previousProviders, providers, providersToPersist] = yield* Ref.modify(
-        providersRef,
+        snapshots.ref,
         (previousProviders) => {
           const mergedProviders = new Map(
             previousProviders.map((provider) => [snapshotInstanceKey(provider), provider] as const),
@@ -434,7 +440,7 @@ export const ProviderRegistryLive = Layer.effect(
           return next;
         });
 
-        const existingProviders = yield* Ref.get(providersRef);
+        const existingProviders = yield* snapshots.get;
         const matchingProvider = existingProviders.find(
           (candidate) => candidate.instanceId === input.instanceId,
         );
@@ -466,7 +472,7 @@ export const ProviderRegistryLive = Layer.effect(
       return yield* Effect.forEach(sources, (source) => refreshOneSource(source), {
         concurrency: "unbounded",
         discard: true,
-      }).pipe(Effect.andThen(Ref.get(providersRef)));
+      }).pipe(Effect.andThen(snapshots.get));
     });
 
     const refresh = Effect.fn("refresh")(function* (provider?: ProviderDriverKind) {
@@ -480,7 +486,7 @@ export const ProviderRegistryLive = Layer.effect(
         (candidate) => candidate.instanceId === defaultInstanceId,
       );
       if (!providerSource) {
-        return yield* Ref.get(providersRef);
+        return yield* snapshots.get;
       }
       return yield* refreshOneSource(providerSource);
     });
@@ -491,7 +497,7 @@ export const ProviderRegistryLive = Layer.effect(
       const sources = yield* getLiveSources;
       const providerSource = sources.find((candidate) => candidate.instanceId === instanceId);
       if (!providerSource) {
-        return yield* Ref.get(providersRef);
+        return yield* snapshots.get;
       }
       return yield* refreshOneSource(providerSource);
     });
@@ -605,7 +611,7 @@ export const ProviderRegistryLive = Layer.effect(
         // Drop aggregator state for instances that have disappeared —
         // otherwise the UI would keep rendering ghosts.
         const [previousProviders, providers] = yield* Ref.modify(
-          providersRef,
+          snapshots.ref,
           (previousProviders) => {
             const providers = orderProviderSnapshots(
               previousProviders.filter((provider) =>
@@ -701,11 +707,11 @@ export const ProviderRegistryLive = Layer.effect(
       yield* Effect.logError("provider registry refresh failed; preserving cached providers", {
         cause: Cause.pretty(cause),
       });
-      return yield* Ref.get(providersRef);
+      return yield* snapshots.get;
     });
 
     return {
-      getProviders: Ref.get(providersRef),
+      getProviders: snapshots.get,
       refresh: (provider?: ProviderDriverKind) =>
         refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),
       refreshInstance: (instanceId: ProviderInstanceId) =>
