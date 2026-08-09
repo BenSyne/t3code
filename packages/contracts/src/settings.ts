@@ -488,12 +488,18 @@ export const T3AgentSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
-    backend: Schema.Literals(["anthropic", "openai", "openrouter", "openai-compat"]).pipe(
+    backend: Schema.Literals([
+      "anthropic",
+      "openai",
+      "openrouter",
+      "cerebras",
+      "openai-compat",
+    ]).pipe(
       Schema.withDecodingDefault(Effect.succeed("anthropic" as const)),
       Schema.annotateKey({
         title: "Provider",
         description:
-          "Where requests go. Choose OpenAI-compatible to use Ollama, LM Studio, or any other server that speaks the OpenAI API.",
+          "Where requests go. Cerebras runs open-weight models very fast. Choose OpenAI-compatible to use Ollama, LM Studio, or any other server that speaks the OpenAI API.",
       }),
     ),
     credentialEnvVar: TrimmedString.pipe(
@@ -513,7 +519,7 @@ export const T3AgentSettings = makeProviderSettingsSchema(
       Schema.annotateKey({
         title: "Base URL",
         description:
-          "Required for OpenAI-compatible servers. Leave blank elsewhere to use the provider's own endpoint.",
+          "Required for OpenAI-compatible servers. Leave blank elsewhere — including for Cerebras, which has a fixed endpoint — to use the provider's own.",
         providerSettingsForm: {
           placeholder: "http://localhost:11434/v1",
           clearWhenEmpty: "omit",

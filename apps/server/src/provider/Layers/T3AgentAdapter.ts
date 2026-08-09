@@ -311,11 +311,22 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         ...discovered.skills,
       ];
 
+      // Only the project's own skills are worth interrupting for. A malformed
+      // skill under the home directory belongs to some other tool's setup, and
+      // shouting about it in the work log of every thread in every project is
+      // noise the user cannot act on from here. It still gets logged.
       for (const rejection of discovered.rejected) {
-        yield* events.warning({
-          threadId: input.threadId,
-          message: `Skill at ${rejection.path} was skipped: ${rejection.reason}.`,
-        });
+        if (rejection.scope === "project") {
+          yield* events.warning({
+            threadId: input.threadId,
+            message: `Skill at ${rejection.path} was skipped: ${rejection.reason}.`,
+          });
+        } else {
+          yield* Effect.logDebug("t3agent skipped a global skill", {
+            path: rejection.path,
+            reason: rejection.reason,
+          });
+        }
       }
 
       const modelLayer = buildModelLayer({ credential: credential.key, model, reasoningEffort });

@@ -57,17 +57,22 @@ binary is missing, or the server's PATH does not include it. Point the instance'
 ## T3 Agent
 
 The odd one out: no CLI, no subprocess. It talks to a model API directly, so it
-needs an actual API key. Four backends:
+needs an actual API key. Five backends:
 
 | Backend | Use for |
 | --- | --- |
 | \`anthropic\` | Claude models direct from Anthropic |
 | \`openai\` | GPT models direct from OpenAI |
 | \`openrouter\` | Almost any model, one key — model ids look like \`vendor/model\` |
+| \`cerebras\` | Open-weight models at very high speed, on a fixed endpoint |
 | \`openai-compat\` | Ollama, LM Studio, vLLM, LiteLLM, any OpenAI-shaped endpoint |
 
 Choose \`openai-compat\` and set **Base URL** for local inference. No key is needed
 there — leave the value blank and the instance still reports ready.
+
+Cerebras needs a real key but no Base URL: its endpoint is fixed, and anything
+typed there is ignored. Its models are \`zai-glm-4.7\`, \`gpt-oss-120b\`, and
+\`gemma-4-31b\`.
 
 ## Where the key goes
 

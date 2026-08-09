@@ -128,6 +128,32 @@ export const KNOWN_MODELS: Record<BackendKind, ReadonlyArray<CatalogModel>> = {
       reasoningEfforts: OPENROUTER_EFFORTS,
     },
   ],
+  // Cerebras runs open-weight models on their own silicon, roughly an order of
+  // magnitude faster than GPU inference. The effort sets below are not the
+  // shared default — Cerebras documents exactly what each model accepts, and
+  // they disagree with each other, so each is declared from their table.
+  cerebras: [
+    {
+      id: "zai-glm-4.7",
+      label: "GLM 4.7",
+      contextWindow: 131_072,
+      // Reasons by default; `none` is the only thing it lets you say about it.
+      reasoningEfforts: ["none"],
+    },
+    {
+      id: "gpt-oss-120b",
+      label: "GPT-OSS 120B",
+      contextWindow: 131_072,
+      // No `none`: this one always reasons.
+      reasoningEfforts: ["low", "medium", "high"],
+    },
+    {
+      id: "gemma-4-31b",
+      label: "Gemma 4 31B",
+      contextWindow: 131_072,
+      reasoningEfforts: ["none", "low", "medium", "high"],
+    },
+  ],
   "openai-compat": [],
 };
 

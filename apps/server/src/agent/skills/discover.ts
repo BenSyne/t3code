@@ -39,8 +39,19 @@ export interface DiscoveredSkill {
 
 export interface SkillDiscovery {
   readonly skills: ReadonlyArray<DiscoveredSkill>;
-  /** Files that looked like skills but could not be read, for a warning. */
-  readonly rejected: ReadonlyArray<{ readonly path: string; readonly reason: string }>;
+  /**
+   * Files that looked like skills but could not be read.
+   *
+   * Carries `scope` because it decides who hears about it. A malformed skill
+   * in the project is about the work at hand and worth surfacing; one in the
+   * home directory belongs to some other tool's setup, and repeating it in
+   * every thread of every project is noise the user cannot act on from here.
+   */
+  readonly rejected: ReadonlyArray<{
+    readonly path: string;
+    readonly reason: string;
+    readonly scope: "project" | "global";
+  }>;
 }
 
 export const EMPTY_DISCOVERY: SkillDiscovery = { skills: [], rejected: [] };
@@ -64,7 +75,7 @@ export const discoverSkills = Effect.fnUntraced(function* (input: {
   readonly homeDirectory: string;
 }) {
   const found = new Map<string, DiscoveredSkill>();
-  const rejected: Array<{ path: string; reason: string }> = [];
+  const rejected: Array<SkillDiscovery["rejected"][number]> = [];
 
   // Global first, so a project skill of the same name overwrites it.
   for (const [scope, roots, base] of [
@@ -81,7 +92,7 @@ export const discoverSkills = Effect.fnUntraced(function* (input: {
         }
         const parsed = yield* Effect.promise(() => readSkill(file, scope));
         if (parsed._tag === "Invalid") {
-          rejected.push({ path: file, reason: parsed.reason });
+          rejected.push({ path: file, reason: parsed.reason, scope });
           continue;
         }
         found.set(parsed.skill.name, parsed.skill);
