@@ -28,8 +28,25 @@ import type { HttpClient } from "effect/unstable/http";
 
 import type { ReasoningEffort } from "./reasoning.ts";
 
-export const BACKEND_KINDS = ["anthropic", "openai", "openrouter", "openai-compat"] as const;
+export const BACKEND_KINDS = [
+  "anthropic",
+  "openai",
+  "openrouter",
+  "cerebras",
+  "openai-compat",
+] as const;
 export type BackendKind = (typeof BACKEND_KINDS)[number];
+
+/**
+ * Cerebras' endpoint, pinned.
+ *
+ * A first-class backend rather than a documented `openai-compat` recipe,
+ * because everything that makes the picker useful — a model list before the
+ * first request, a working default, the right reasoning levels per model —
+ * needs a name to hang off. The wire format is still OpenAI's, so this costs
+ * one switch arm and no new dependency.
+ */
+export const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1";
 
 export interface ResolveLanguageModelInput {
   readonly backend: BackendKind;
@@ -113,14 +130,31 @@ export function openRouterReasoningConfig(
  * OpenAI-compatible servers: pass `reasoning_effort` through untranslated.
  *
  * The de-facto `/chat/completions` spelling, understood by vLLM, LiteLLM and
- * recent Ollama. A server that has never heard of it ignores the unknown
- * field, which is exactly the behaviour we want from a backend defined as
- * "whatever is behind that address".
+ * recent Ollama — and by Cerebras, which shares this arm. A server that has
+ * never heard of it ignores the unknown field, which is exactly the behaviour
+ * we want from a backend defined as "whatever is behind that address".
  */
 export function compatReasoningConfig(
   effort: ReasoningEffort | undefined,
 ): { readonly reasoning_effort: ReasoningEffort } | undefined {
   return effort === undefined ? undefined : { reasoning_effort: effort };
+}
+
+/** Where a local server would be if the user has not said otherwise. */
+export const DEFAULT_LOCAL_BASE_URL = "http://localhost:11434/v1";
+
+/**
+ * Which address the OpenAI-compatible client talks to.
+ *
+ * Cerebras is pinned: the endpoint is what makes that backend Cerebras, and
+ * honouring an override would let a stray value point it somewhere else while
+ * the UI still names Cerebras and the catalogue still offers its models.
+ */
+export function compatBaseUrl(
+  backend: "cerebras" | "openai-compat",
+  baseUrl: string | undefined,
+): string {
+  return backend === "cerebras" ? CEREBRAS_BASE_URL : (baseUrl ?? DEFAULT_LOCAL_BASE_URL);
 }
 
 export function resolveLanguageModel(
@@ -169,13 +203,17 @@ export function resolveLanguageModel(
       );
     }
 
+    // Cerebras and every self-hosted server share this arm: both speak
+    // `/chat/completions`. They differ only in where they are and whether we
+    // know the address ahead of time.
+    case "cerebras":
     case "openai-compat": {
       const config = compatReasoningConfig(input.reasoningEffort);
       // A different package from `openai`, and the difference is the whole
-      // point: OpenAI's own client speaks the Responses API, while Ollama, LM
-      // Studio, vLLM and every other local server implement the older
-      // `/chat/completions`. Using the wrong one fails at the first request
-      // with a schema error that reads like a bug in this repository.
+      // point: OpenAI's own client speaks the Responses API, while Cerebras,
+      // Ollama, LM Studio, vLLM and every other compatible server implement
+      // the older `/chat/completions`. Using the wrong one fails at the first
+      // request with a schema error that reads like a bug in this repository.
       return Layer.provide(
         OpenAiCompatLanguageModel.layer({
           model: input.model,
@@ -186,7 +224,8 @@ export function resolveLanguageModel(
           // A local server usually ignores the key entirely, but the client
           // still wants one, which is why `credentials.ts` hands out a
           // placeholder rather than reporting the instance unauthenticated.
-          apiUrl: input.baseUrl ?? "http://localhost:11434/v1",
+          // Cerebras does require a real key — see `keyOptional` in the driver.
+          apiUrl: compatBaseUrl(input.backend, input.baseUrl),
         }),
       );
     }
