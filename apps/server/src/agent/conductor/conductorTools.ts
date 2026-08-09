@@ -251,7 +251,8 @@ const delegate = (context: ConductorContext): AgentTool =>
     Tool.make("delegate_to_agent", {
       description:
         "Start a thread with another coding agent and send it a task. Returns the thread id. " +
-        "The thread runs on its own — use read_delegated_thread to see what it produced.",
+        "The thread runs on its own and nothing will tell you when it finishes — use " +
+        "read_delegated_thread to look. Do not promise the user you will watch it or report back.",
       parameters: Schema.Struct({
         providerInstanceId: Schema.String.annotate({
           description: "From list_providers.",
