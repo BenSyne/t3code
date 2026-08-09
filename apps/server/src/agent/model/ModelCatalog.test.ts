@@ -39,12 +39,12 @@ describe("catalogue coverage", () => {
     }
   });
 
-  it("knows the window for Cerebras' models", () => {
-    // Without this the usage meter has no denominator and reports unknown,
-    // which is honest but useless on a model whose whole appeal is speed at
-    // long context.
-    expect(contextWindowFor("cerebras", "zai-glm-4.7")).toBe(131_072);
-    expect(contextWindowFor("cerebras", "gpt-oss-120b")).toBe(131_072);
+  it("quotes Cerebras' free-tier windows, not the paid ones", () => {
+    // Deliberately the smaller pair. Claiming the paid 131k means compaction
+    // never fires for a free-tier user, so the first they hear about the limit
+    // is a rejected request. Erring low only costs an early summarisation.
+    expect(contextWindowFor("cerebras", "zai-glm-4.7")).toBe(64_000);
+    expect(contextWindowFor("cerebras", "gpt-oss-120b")).toBe(65_000);
   });
 
   it("declares Cerebras' per-model effort sets, which genuinely differ", () => {

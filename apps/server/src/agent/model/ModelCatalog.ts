@@ -129,28 +129,39 @@ export const KNOWN_MODELS: Record<BackendKind, ReadonlyArray<CatalogModel>> = {
     },
   ],
   // Cerebras runs open-weight models on their own silicon, roughly an order of
-  // magnitude faster than GPU inference. The effort sets below are not the
-  // shared default — Cerebras documents exactly what each model accepts, and
-  // they disagree with each other, so each is declared from their table.
+  // magnitude faster than GPU inference. Two things here are not guesses and
+  // should not be "tidied" into the shared defaults:
+  //
+  // The effort sets come from Cerebras' own per-model table and genuinely
+  // disagree with each other.
+  //
+  // The windows are the documented *free tier* numbers, not the paid ones
+  // (131k). Erring low is the safer mistake: too high and compaction never
+  // fires, so the first the user hears of it is a rejected request. Even these
+  // are optimistic — a trial key was observed enforcing 8,192 on GLM 4.7,
+  // eight times below what the docs promise. The limit ultimately belongs to
+  // the account, not the model, so nothing written here can be reliable; what
+  // makes that survivable is `failureMessage.ts`, which reads the real limit
+  // out of the rejection and explains it.
   cerebras: [
     {
       id: "zai-glm-4.7",
       label: "GLM 4.7",
-      contextWindow: 131_072,
+      contextWindow: 64_000,
       // Reasons by default; `none` is the only thing it lets you say about it.
       reasoningEfforts: ["none"],
     },
     {
       id: "gpt-oss-120b",
       label: "GPT-OSS 120B",
-      contextWindow: 131_072,
+      contextWindow: 65_000,
       // No `none`: this one always reasons.
       reasoningEfforts: ["low", "medium", "high"],
     },
     {
       id: "gemma-4-31b",
       label: "Gemma 4 31B",
-      contextWindow: 131_072,
+      contextWindow: 65_000,
       reasoningEfforts: ["none", "low", "medium", "high"],
     },
   ],
