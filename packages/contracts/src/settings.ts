@@ -486,6 +486,14 @@ export const T3AgentSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
+    backend: Schema.Literals(["anthropic", "openai", "openrouter", "openai-compat"]).pipe(
+      Schema.withDecodingDefault(Effect.succeed("anthropic" as const)),
+      Schema.annotateKey({
+        title: "Provider",
+        description:
+          "Where requests go. Choose OpenAI-compatible to use Ollama, LM Studio, or any other server that speaks the OpenAI API.",
+      }),
+    ),
     credentialEnvVar: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("ANTHROPIC_API_KEY")),
       Schema.annotateKey({
@@ -494,6 +502,18 @@ export const T3AgentSettings = makeProviderSettingsSchema(
           "Name of the environment variable holding the API key. Set its value below, where it is stored as a secret rather than in settings.",
         providerSettingsForm: {
           placeholder: "ANTHROPIC_API_KEY",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    baseUrl: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Base URL",
+        description:
+          "Required for OpenAI-compatible servers. Leave blank elsewhere to use the provider's own endpoint.",
+        providerSettingsForm: {
+          placeholder: "http://localhost:11434/v1",
           clearWhenEmpty: "omit",
         },
       }),
@@ -515,7 +535,7 @@ export const T3AgentSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["credentialEnvVar", "defaultModel"],
+    order: ["backend", "credentialEnvVar", "baseUrl", "defaultModel"],
   },
 );
 export type T3AgentSettings = typeof T3AgentSettings.Type;

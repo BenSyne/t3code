@@ -9,9 +9,12 @@
  * @module agent/events/emitter
  */
 import type {
+  CanonicalItemType,
   ProviderDriverKind,
   ProviderRuntimeEvent,
+  RuntimeItemId,
   ThreadId,
+  ThreadTokenUsageSnapshot,
   TurnId,
 } from "@t3tools/contracts";
 import { EventId } from "@t3tools/contracts";
@@ -20,10 +23,15 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
 import {
+  assistantMessageItemEvent,
   assistantTextDeltaEvent,
+  reasoningDeltaEvent,
+  runtimeWarningEvent,
   sessionExitedEvent,
   sessionStartedEvent,
   threadStartedEvent,
+  tokenUsageEvent,
+  toolItemEvent,
   turnCompletedEvent,
   turnStartedEvent,
 } from "./builders.ts";
@@ -63,10 +71,42 @@ export const makeRuntimeEventEmitter = Effect.fnUntraced(function* (
         offer(assistantTextDeltaEvent({ provider, ...input, stamp: s })),
       ),
 
+    reasoning: (input: { threadId: ThreadId; turnId: TurnId; delta: string }) =>
+      Effect.flatMap(stamp, (s) => offer(reasoningDeltaEvent({ provider, ...input, stamp: s }))),
+
+    assistantMessageItem: (input: {
+      threadId: ThreadId;
+      turnId: TurnId;
+      itemId: RuntimeItemId;
+      lifecycle: "item.started" | "item.completed";
+    }) =>
+      Effect.flatMap(stamp, (s) =>
+        offer(assistantMessageItemEvent({ provider, ...input, stamp: s })),
+      ),
+
+    toolItem: (input: {
+      threadId: ThreadId;
+      turnId: TurnId;
+      itemId: RuntimeItemId;
+      lifecycle: "item.started" | "item.updated" | "item.completed";
+      itemType: CanonicalItemType;
+      status: "inProgress" | "completed" | "failed";
+      title: string;
+      detail?: string | undefined;
+      data?: Record<string, unknown> | undefined;
+    }) => Effect.flatMap(stamp, (s) => offer(toolItemEvent({ provider, ...input, stamp: s }))),
+
+    tokenUsage: (input: { threadId: ThreadId; usage: ThreadTokenUsageSnapshot }) =>
+      Effect.flatMap(stamp, (s) => offer(tokenUsageEvent({ provider, ...input, stamp: s }))),
+
+    warning: (input: { threadId: ThreadId; message: string }) =>
+      Effect.flatMap(stamp, (s) => offer(runtimeWarningEvent({ provider, ...input, stamp: s }))),
+
     turnCompleted: (input: {
       threadId: ThreadId;
       turnId: TurnId;
       state: "completed" | "failed" | "interrupted" | "cancelled";
+      stopReason?: string | undefined;
       errorMessage?: string | undefined;
     }) => Effect.flatMap(stamp, (s) => offer(turnCompletedEvent({ provider, ...input, stamp: s }))),
 

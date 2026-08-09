@@ -24,6 +24,8 @@ import type * as Tool from "effect/unstable/ai/Tool";
 import * as Toolkit from "effect/unstable/ai/Toolkit";
 import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
+import { toolFailure } from "./failure.ts";
+
 /**
  * What a tool is allowed to reach.
  *
@@ -57,6 +59,13 @@ type ErasedHandler = (params: never, context: never) => Effect.Effect<unknown, u
  * The handler may fail with the tool's declared failure type. Tools are built
  * with `failureMode: "return"`, so such a failure is handed to the model as a
  * result it can read and recover from, rather than ending the turn.
+ *
+ * A handler that *throws* is a different matter. `failureMode` governs declared
+ * failures; a defect — a bug, a library throwing where it said it would not —
+ * bypasses it entirely and takes the turn down. Since a tool is the least
+ * trustworthy code in the loop (MCP servers are third-party by definition),
+ * every handler is wrapped so a defect becomes an ordinary tool failure the
+ * model can read and work around.
  */
 export function defineTool<T extends Tool.Any>(
   tool: T,
@@ -65,7 +74,21 @@ export function defineTool<T extends Tool.Any>(
     context: Toolkit.HandlerContext<T>,
   ) => Effect.Effect<Tool.Success<T>, Tool.Failure<T> | AiError.AiError>,
 ): AgentTool {
-  return { tool, handler: handler as ErasedHandler };
+  const contained = (params: Tool.Parameters<T>, context: Toolkit.HandlerContext<T>) =>
+    Effect.catchDefect(handler(params, context), (defect) =>
+      Effect.fail(
+        toolFailure(`The ${tool.name} tool failed unexpectedly: ${describeDefect(defect)}`),
+      ),
+    );
+  return { tool, handler: contained as ErasedHandler };
+}
+
+/** One line, no stack: the model cannot act on a stack trace and pays for it. */
+function describeDefect(defect: unknown): string {
+  if (defect instanceof Error && defect.message !== "") {
+    return defect.message;
+  }
+  return typeof defect === "string" && defect !== "" ? defect : "unknown error";
 }
 
 /**

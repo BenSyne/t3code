@@ -8,21 +8,29 @@
  *
  * @module agent/loop/sessionStore
  */
-import type { ProviderSession, ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import type * as Layer from "effect/Layer";
-import type * as LanguageModel from "effect/unstable/ai/LanguageModel";
+import type { ProviderSession } from "@t3tools/contracts";
 import * as Prompt from "effect/unstable/ai/Prompt";
 
 import {
   ProviderAdapterSessionClosedError,
   ProviderAdapterSessionNotFoundError,
 } from "../../provider/Errors.ts";
-import { closeSession, type AgentSessionContext, type AgentSessionMap } from "./AgentSession.ts";
+import {
+  closeSession,
+  makeSessionContext,
+  type AgentSessionContext,
+  type AgentSessionMap,
+} from "./AgentSession.ts";
 
 export type SessionLookupError =
   | ProviderAdapterSessionNotFoundError
   | ProviderAdapterSessionClosedError;
+
+type CreateInput = Omit<Parameters<typeof makeSessionContext>[0], "prompt"> & {
+  readonly prompt?: Prompt.Prompt | undefined;
+};
 
 export function createSessionStore(provider: string) {
   const sessions: AgentSessionMap = new Map();
@@ -45,19 +53,8 @@ export function createSessionStore(provider: string) {
     return Effect.succeed(context);
   };
 
-  const create = (input: {
-    readonly session: ProviderSession;
-    readonly model: string;
-    readonly modelLayer: Layer.Layer<LanguageModel.LanguageModel>;
-  }): AgentSessionContext => {
-    const context: AgentSessionContext = {
-      session: input.session,
-      model: input.model,
-      modelLayer: input.modelLayer,
-      prompt: Prompt.empty,
-      turns: [],
-      stopped: false,
-    };
+  const create = (input: CreateInput): AgentSessionContext => {
+    const context = makeSessionContext({ ...input, prompt: input.prompt ?? Prompt.empty });
     sessions.set(input.session.threadId, context);
     return context;
   };
@@ -95,14 +92,25 @@ export function createSessionStore(provider: string) {
   });
 
   /**
-   * Drop the last `numTurns` turns.
+   * Drop the last `numTurns` turns, conversation included.
    *
-   * Exact rather than best-effort, because we own the history instead of asking
-   * a provider for it. Out-of-range counts clamp rather than throw: rolling back
+   * Exact rather than best-effort: each turn recorded how long the conversation
+   * was before it ran, so undoing one restores precisely the prompt the model
+   * would have seen. Out-of-range counts clamp rather than throw — rolling back
    * more turns than exist means "go back to the start".
    */
   const rollback = (context: AgentSessionContext, numTurns: number): void => {
-    context.turns.length = Math.max(0, context.turns.length - Math.max(0, numTurns));
+    const drop = Math.min(context.turns.length, Math.max(0, numTurns));
+    if (drop === 0) {
+      return;
+    }
+    const firstDropped = context.turns[context.turns.length - drop];
+    context.turns.length = context.turns.length - drop;
+    if (firstDropped !== undefined) {
+      context.prompt = Prompt.make(
+        context.prompt.content.slice(0, firstDropped.promptLengthBefore),
+      );
+    }
   };
 
   return { require, create, close, get, list, isLive, all, snapshot, rollback };
