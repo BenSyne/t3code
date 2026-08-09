@@ -26,6 +26,8 @@ import type * as Redacted from "effect/Redacted";
 import type * as LanguageModel from "effect/unstable/ai/LanguageModel";
 import type { HttpClient } from "effect/unstable/http";
 
+import type { ReasoningEffort } from "./reasoning.ts";
+
 export const BACKEND_KINDS = ["anthropic", "openai", "openrouter", "openai-compat"] as const;
 export type BackendKind = (typeof BACKEND_KINDS)[number];
 
@@ -40,47 +42,145 @@ export interface ResolveLanguageModelInput {
    * and optional elsewhere, where it covers proxies and regional endpoints.
    */
   readonly baseUrl?: string | undefined;
+  /**
+   * How hard to think, on the shared scale, or undefined to send nothing and
+   * let the provider decide. Translated to each backend's wire shape below.
+   */
+  readonly reasoningEffort?: ReasoningEffort | undefined;
+}
+
+// ── Effort translation ────────────────────────────────────────────────
+//
+// Exported for tests: each function is the complete statement of how one
+// backend spells the shared scale, pure and checkable without a network.
+//
+// Levels a backend cannot express clamp to its nearest neighbour rather than
+// failing. The picker only offers what the catalogue says a model supports,
+// so a clamp normally never fires — but selections outlive builds and users
+// type custom model names, and "slightly less effort than asked" is the right
+// failure mode where "the turn did not run" is not.
+
+/**
+ * Anthropic: adaptive thinking plus a native effort level.
+ *
+ * The adaptive API is what makes this mapping honest — the older knob was a
+ * raw token budget, and any translation to it would have been an invented
+ * number. `none` disables thinking entirely, which on Anthropic is also the
+ * provider default.
+ */
+export function anthropicReasoningConfig(effort: ReasoningEffort | undefined):
+  | { readonly thinking: { readonly type: "disabled" } }
+  | {
+      readonly thinking: { readonly type: "adaptive" };
+      readonly output_config: { readonly effort: "low" | "medium" | "high" };
+    }
+  | undefined {
+  switch (effort) {
+    case undefined:
+      return undefined;
+    case "none":
+      return { thinking: { type: "disabled" } };
+    case "minimal":
+    case "low":
+      return { thinking: { type: "adaptive" }, output_config: { effort: "low" } };
+    case "medium":
+      return { thinking: { type: "adaptive" }, output_config: { effort: "medium" } };
+    case "high":
+    case "xhigh":
+    case "max":
+      return { thinking: { type: "adaptive" }, output_config: { effort: "high" } };
+  }
+}
+
+/** OpenAI: the Responses API takes the scale directly, minus `max`. */
+export function openAiReasoningConfig(
+  effort: ReasoningEffort | undefined,
+): { readonly reasoning: { readonly effort: Exclude<ReasoningEffort, "max"> } } | undefined {
+  if (effort === undefined) {
+    return undefined;
+  }
+  return { reasoning: { effort: effort === "max" ? "xhigh" : effort } };
+}
+
+/** OpenRouter: the scale is theirs, verbatim, and they translate per upstream model. */
+export function openRouterReasoningConfig(
+  effort: ReasoningEffort | undefined,
+): { readonly reasoning_effort: ReasoningEffort } | undefined {
+  return effort === undefined ? undefined : { reasoning_effort: effort };
+}
+
+/**
+ * OpenAI-compatible servers: pass `reasoning_effort` through untranslated.
+ *
+ * The de-facto `/chat/completions` spelling, understood by vLLM, LiteLLM and
+ * recent Ollama. A server that has never heard of it ignores the unknown
+ * field, which is exactly the behaviour we want from a backend defined as
+ * "whatever is behind that address".
+ */
+export function compatReasoningConfig(
+  effort: ReasoningEffort | undefined,
+): { readonly reasoning_effort: ReasoningEffort } | undefined {
+  return effort === undefined ? undefined : { reasoning_effort: effort };
 }
 
 export function resolveLanguageModel(
   input: ResolveLanguageModelInput,
 ): Layer.Layer<LanguageModel.LanguageModel, never, HttpClient.HttpClient> {
   switch (input.backend) {
-    case "anthropic":
+    case "anthropic": {
+      const config = anthropicReasoningConfig(input.reasoningEffort);
       return Layer.provide(
-        AnthropicLanguageModel.layer({ model: input.model }),
+        AnthropicLanguageModel.layer({
+          model: input.model,
+          ...(config === undefined ? {} : { config }),
+        }),
         AnthropicClient.layer({
           apiKey: input.credential,
           ...(input.baseUrl === undefined ? {} : { apiUrl: input.baseUrl }),
         }),
       );
+    }
 
-    case "openai":
+    case "openai": {
+      const config = openAiReasoningConfig(input.reasoningEffort);
       return Layer.provide(
-        OpenAiLanguageModel.layer({ model: input.model }),
+        OpenAiLanguageModel.layer({
+          model: input.model,
+          ...(config === undefined ? {} : { config }),
+        }),
         OpenAiClient.layer({
           apiKey: input.credential,
           ...(input.baseUrl === undefined ? {} : { apiUrl: input.baseUrl }),
         }),
       );
+    }
 
-    case "openrouter":
+    case "openrouter": {
+      const config = openRouterReasoningConfig(input.reasoningEffort);
       return Layer.provide(
-        OpenRouterLanguageModel.layer({ model: input.model }),
+        OpenRouterLanguageModel.layer({
+          model: input.model,
+          ...(config === undefined ? {} : { config }),
+        }),
         OpenRouterClient.layer({
           apiKey: input.credential,
           ...(input.baseUrl === undefined ? {} : { apiUrl: input.baseUrl }),
         }),
       );
+    }
 
-    case "openai-compat":
+    case "openai-compat": {
+      const config = compatReasoningConfig(input.reasoningEffort);
       // A different package from `openai`, and the difference is the whole
       // point: OpenAI's own client speaks the Responses API, while Ollama, LM
       // Studio, vLLM and every other local server implement the older
       // `/chat/completions`. Using the wrong one fails at the first request
       // with a schema error that reads like a bug in this repository.
       return Layer.provide(
-        OpenAiCompatLanguageModel.layer({ model: input.model }),
+        OpenAiCompatLanguageModel.layer({
+          model: input.model,
+          ...(config === undefined ? {} : { config }),
+        }),
         OpenAiCompatClient.layer({
           apiKey: input.credential,
           // A local server usually ignores the key entirely, but the client
@@ -89,5 +189,6 @@ export function resolveLanguageModel(
           apiUrl: input.baseUrl ?? "http://localhost:11434/v1",
         }),
       );
+    }
   }
 }

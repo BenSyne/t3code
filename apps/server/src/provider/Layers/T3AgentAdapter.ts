@@ -21,13 +21,16 @@
 import {
   RuntimeRequestId,
   type CanonicalRequestType,
+  type ModelSelection,
   type ProviderSession,
   type RuntimeMode,
   type ThreadId,
   TurnId,
 } from "@t3tools/contracts";
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import type * as Redacted from "effect/Redacted";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -41,7 +44,11 @@ import { toPricingTotals } from "../../agent/events/usage.ts";
 import { priceUsage } from "../../usage/usagePricing.ts";
 import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
 import { makeRuntimeEventEmitter } from "../../agent/events/emitter.ts";
-import { setSessionStatus, type AgentSessionContext } from "../../agent/loop/AgentSession.ts";
+import {
+  applyModelChoice,
+  setSessionStatus,
+  type AgentSessionContext,
+} from "../../agent/loop/AgentSession.ts";
 import { compactPrompt } from "../../agent/compaction/summarize.ts";
 import { contextBudget, shouldCompact } from "../../agent/compaction/tokenBudget.ts";
 import { makeAgentConcurrency } from "../../agent/loop/concurrency.ts";
@@ -51,6 +58,7 @@ import { subjectForTool } from "../../agent/permission/profile.ts";
 import { runTurn } from "../../agent/loop/runTurn.ts";
 import { createSessionStore } from "../../agent/loop/sessionStore.ts";
 import { makeTranscriptStore } from "../../agent/state/TranscriptStore.ts";
+import { asReasoningEffort, type ReasoningEffort } from "../../agent/model/reasoning.ts";
 import { resolveLanguageModel } from "../../agent/model/resolveLanguageModel.ts";
 import { readProjectContext } from "../../agent/prompt/agentsMd.ts";
 import { buildSystemPrompt } from "../../agent/prompt/systemPrompt.ts";
@@ -164,6 +172,73 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
       : { _tag: "Denied" as const, reason: "You declined this action." };
   });
 
+  /**
+   * One place that turns a model choice into a ready layer, used at session
+   * start and again on every mid-session switch, so the two paths cannot
+   * drift apart.
+   */
+  const buildModelLayer = (input: {
+    readonly credential: Redacted.Redacted<string>;
+    readonly model: string;
+    readonly reasoningEffort: ReasoningEffort | undefined;
+  }) =>
+    Layer.provide(
+      resolveLanguageModel({
+        backend: options.backend,
+        credential: input.credential,
+        model: input.model,
+        ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
+        ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }),
+      }),
+      Layer.succeed(HttpClient.HttpClient, httpClient),
+    );
+
+  const requestedEffort = (selection: ModelSelection | undefined) =>
+    asReasoningEffort(getModelSelectionStringOptionValue(selection, "reasoningEffort"));
+
+  /**
+   * Honour a turn's model selection before running it.
+   *
+   * This is the other half of `capabilities.sessionModelSwitch: "in-session"`:
+   * the orchestrator deliberately keeps the session alive across a model or
+   * effort change and trusts this adapter to apply it on the next turn.
+   * Ignoring the selection here would mean the picker changes what the UI
+   * *says* while every turn keeps running on whatever the session started with.
+   */
+  const applyRequestedSelection = Effect.fnUntraced(function* (
+    context: AgentSessionContext,
+    selection: ModelSelection | undefined,
+  ) {
+    if (selection === undefined) {
+      return;
+    }
+    const model = selection.model;
+    const reasoningEffort = requestedEffort(selection);
+    if (model === context.model && reasoningEffort === context.reasoningEffort) {
+      return;
+    }
+    // Re-resolved rather than kept from session start, so a key rotated
+    // mid-conversation is picked up instead of failing on the old one.
+    const credential = options.credential();
+    if (credential._tag === "Missing") {
+      return yield* new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "turn.send",
+        detail: `No API key found. Set ${credential.variableName} for this provider instance.`,
+      });
+    }
+    applyModelChoice(
+      context,
+      {
+        model,
+        reasoningEffort,
+        modelLayer: buildModelLayer({ credential: credential.key, model, reasoningEffort }),
+        contextWindow: options.contextWindowFor(model),
+      },
+      yield* nowIso,
+    );
+  });
+
   const startSession: T3AgentAdapterShape["startSession"] = Effect.fn("t3agent/startSession")(
     function* (input) {
       const credential = options.credential();
@@ -178,6 +253,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
       }
 
       const model = input.modelSelection?.model ?? options.defaultModel;
+      const reasoningEffort = requestedEffort(input.modelSelection);
       const workspaceRoot = input.cwd ?? process.cwd();
       const createdAt = yield* nowIso;
       const session: ProviderSession = {
@@ -242,18 +318,13 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         });
       }
 
-      // Built at a depth so a sub-agent's own toolkit can be built the same
-      // way, one level down, and lose `task` at the cap.
-      const modelLayer = Layer.provide(
-        resolveLanguageModel({
-          backend: options.backend,
-          credential: credential.key,
-          model,
-          ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
-        }),
-        Layer.succeed(HttpClient.HttpClient, httpClient),
-      );
+      const modelLayer = buildModelLayer({ credential: credential.key, model, reasoningEffort });
 
+      // Built at a depth so a sub-agent's own toolkit can be built the same
+      // way, one level down, and lose `task` at the cap. The model thunks read
+      // the session context (created below — safe because tools only run
+      // during turns), so a sub-agent follows a mid-session model switch
+      // instead of running on the model the session started with.
       const contributorsAtDepth = (depth: number): ReadonlyArray<ToolContributor> => [
         coreTools,
         skillContributor(skills),
@@ -261,12 +332,12 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         subagentContributor({
           depth,
           systemPrompt: () => systemPrompt,
-          contextWindow: options.contextWindowFor(model),
+          contextWindow: () => sessionContext.contextWindow,
           toolkitForDepth: (childDepth) =>
             Effect.flatMap(resolveTools(contributorsAtDepth(childDepth), toolContext), (child) =>
               buildToolkit(child.tools),
             ),
-          modelLayer,
+          modelLayer: () => sessionContext.modelLayer,
           emitter: events,
           threadId: input.threadId,
           resolveTurnId: () => activeTurns.get(input.threadId),
@@ -302,9 +373,10 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
             ])
           : Prompt.make([{ role: "system" as const, content: systemPrompt }]);
 
-      store.create({
+      const sessionContext = store.create({
         session,
         model,
+        reasoningEffort,
         // Transport is baked in here, once, so a turn requires nothing further.
         modelLayer,
         workspaceRoot,
@@ -435,6 +507,9 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
   const sendTurn: T3AgentAdapterShape["sendTurn"] = Effect.fn("t3agent/sendTurn")(
     function* (input) {
       const context = yield* store.require(input.threadId);
+      // Before anything is emitted: the turn-started event below reports the
+      // model, and it must report the one this turn will actually use.
+      yield* applyRequestedSelection(context, input.modelSelection);
       // Minted here and stamped on every event below — see the module note.
       const turnId = TurnId.make(yield* uuid);
       const threadId = input.threadId;
