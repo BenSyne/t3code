@@ -23,10 +23,12 @@
  */
 import type {
   DispatchableClientOrchestrationCommand,
+  OrchestrationThreadShell,
   ServerProviderAuth,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -34,11 +36,8 @@ import { OrchestrationEngineService } from "../../orchestration/Services/Orchest
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderSnapshotStore } from "../../provider/Services/ProviderSnapshotStore.ts";
 import type { OrchestrationClient, ProviderSummary, ThreadSummary } from "./OrchestrationClient.ts";
-
-/** Transcript lines past this stop informing and start crowding the context. */
-const MAX_TRANSCRIPT_MESSAGES = 60;
-/** One pasted file should not become the whole of what the agent reads back. */
-const MAX_MESSAGE_CHARS = 2_000;
+import { lifecycleOf } from "./threadLifecycle.ts";
+import { renderTranscript } from "./transcript.ts";
 
 /**
  * A rejected command, in words.
@@ -72,9 +71,6 @@ function billingOf(auth: ServerProviderAuth): ProviderSummary["billing"] {
   }
   return auth.type === undefined ? "unknown" : "subscription";
 }
-
-const truncate = (text: string): string =>
-  text.length <= MAX_MESSAGE_CHARS ? text : `${text.slice(0, MAX_MESSAGE_CHARS)}… [truncated]`;
 
 /**
  * Build the client from services already in the server graph.
@@ -133,22 +129,38 @@ export const makeLiveOrchestrationClient = Effect.gen(function* () {
     })),
   );
 
+  const summarize = (thread: OrchestrationThreadShell, nowIso: string): ThreadSummary => ({
+    threadId: thread.id,
+    title: thread.title,
+    // A thread with no session has not run yet; its configured instance is
+    // still the honest answer to "who would this go to".
+    providerInstanceId: thread.modelSelection.instanceId,
+    status: thread.session?.status ?? "idle",
+    updatedAt: thread.updatedAt,
+    lifecycle: lifecycleOf(thread, nowIso),
+    isRunning: (thread.session?.activeTurnId ?? null) !== null,
+  });
+
   const listThreads: OrchestrationClient["listThreads"] = (projectId) =>
-    Effect.map(
-      shell,
-      (model): ReadonlyArray<ThreadSummary> =>
-        (model?.threads ?? [])
-          .filter((thread) => thread.projectId === projectId)
-          .map((thread) => ({
-            threadId: thread.id,
-            title: thread.title,
-            // A thread with no session has not run yet; its configured instance
-            // is still the honest answer to "who would this go to".
-            providerInstanceId: thread.modelSelection.instanceId,
-            status: thread.session?.status ?? "idle",
-            updatedAt: thread.updatedAt,
-          })),
-    );
+    Effect.gen(function* () {
+      const model = yield* shell;
+      // One clock reading for the whole list, so two threads with the same
+      // wake time cannot be classified differently by a millisecond.
+      const nowIso = yield* Effect.map(DateTime.now, DateTime.formatIso);
+      return (model?.threads ?? [])
+        .filter((thread) => thread.projectId === projectId)
+        .map((thread) => summarize(thread, nowIso));
+    });
+
+  const getThread: OrchestrationClient["getThread"] = (threadId) =>
+    Effect.gen(function* () {
+      const model = yield* shell;
+      const found = (model?.threads ?? []).find((thread) => thread.id === threadId);
+      if (found === undefined) {
+        return undefined;
+      }
+      return summarize(found, yield* Effect.map(DateTime.now, DateTime.formatIso));
+    });
 
   /**
    * The thread as text.
@@ -164,18 +176,12 @@ export const makeLiveOrchestrationClient = Effect.gen(function* () {
           return `No thread ${threadId} was found. It may have been deleted.`;
         }
         const thread = found.value;
-        const recent = thread.messages.slice(-MAX_TRANSCRIPT_MESSAGES);
-        const omitted = thread.messages.length - recent.length;
-        const lines = recent.map(
-          (message) => `${message.role === "user" ? "User" : "Agent"}: ${truncate(message.text)}`,
-        );
-        return [
-          `Thread: ${thread.title}`,
-          `Status: ${thread.session?.status ?? "idle"}`,
-          ...(omitted > 0 ? [`(${omitted} earlier messages omitted)`] : []),
-          "",
-          ...lines,
-        ].join("\n");
+        return renderTranscript({
+          title: thread.title,
+          status: thread.session?.status ?? "idle",
+          messages: thread.messages,
+          activities: thread.activities,
+        });
       }),
       Effect.catchCause((cause) =>
         Effect.succeed(`Could not read thread ${threadId}: ${describe(cause)}`),
@@ -187,6 +193,7 @@ export const makeLiveOrchestrationClient = Effect.gen(function* () {
     listProviders,
     listProjects,
     listThreads,
+    getThread,
     readThread,
   } satisfies OrchestrationClient;
 });

@@ -28,6 +28,8 @@ import type {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
+import type { ThreadLifecycle } from "./threadLifecycle.ts";
+
 /** What the agent can see about a thread it did not start. */
 export interface ThreadSummary {
   readonly threadId: ThreadId;
@@ -35,6 +37,21 @@ export interface ThreadSummary {
   readonly providerInstanceId: ProviderInstanceId;
   readonly status: string;
   readonly updatedAt: string;
+  /**
+   * Where the thread sits in the inbox.
+   *
+   * Without this the agent can change a thread's state but never see the
+   * state it is changing, so "settle everything that is finished" becomes
+   * settling threads that already were — repeatedly, with no way to tell.
+   */
+  readonly lifecycle: ThreadLifecycle;
+  /**
+   * Whether a turn is in flight right now.
+   *
+   * Read from `activeTurnId` rather than from the coarser session status,
+   * because that is the field that actually decides whether work is running.
+   */
+  readonly isRunning: boolean;
 }
 
 /**
@@ -83,6 +100,15 @@ export interface OrchestrationClient {
   readonly listProviders: Effect.Effect<ReadonlyArray<ProviderSummary>>;
   readonly listProjects: Effect.Effect<ReadonlyArray<ProjectSummary>>;
   readonly listThreads: (projectId: string) => Effect.Effect<ReadonlyArray<ThreadSummary>>;
+  /**
+   * One thread, without needing to know which project it is in.
+   *
+   * Not a widening of what the agent can see — it returns exactly what
+   * `listThreads` already returns. It exists because acting on a thread needs
+   * its current state first, and making the agent guess the project to find a
+   * thread it already has the id of is a lookup it would get wrong.
+   */
+  readonly getThread: (threadId: ThreadId) => Effect.Effect<ThreadSummary | undefined>;
   /** The transcript of a thread, as text the model can read. */
   readonly readThread: (threadId: ThreadId) => Effect.Effect<string>;
 }

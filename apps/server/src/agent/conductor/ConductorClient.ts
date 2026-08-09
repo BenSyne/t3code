@@ -42,6 +42,7 @@ export const ConductorClientUnavailable = Layer.succeed(
     listProviders: Effect.succeed([]),
     listProjects: Effect.succeed([]),
     listThreads: () => Effect.succeed([]),
+    getThread: () => Effect.succeed(undefined),
     readThread: () => Effect.succeed("Orchestration is not available here."),
   }),
 );
