@@ -22,6 +22,7 @@
  * @module agent/conductor/liveClient
  */
 import type { DispatchableClientOrchestrationCommand, ThreadId } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -35,8 +36,19 @@ const MAX_TRANSCRIPT_MESSAGES = 60;
 /** One pasted file should not become the whole of what the agent reads back. */
 const MAX_MESSAGE_CHARS = 2_000;
 
-const describe = (error: unknown): string =>
-  error instanceof Error && error.message !== "" ? error.message : "unknown error";
+/**
+ * A rejected command, in words.
+ *
+ * `Cause.pretty` rather than a check for `Error`: what arrives here is a
+ * `Cause`, which is not an `Error`, so the obvious version answered "unknown
+ * error" to everything. A malformed command then reported the one thing that
+ * could not help — and did it to the model, which had no way to correct
+ * itself, and to the user watching the tool fail for no stated reason.
+ */
+const describe = (cause: Cause.Cause<unknown>): string => {
+  const pretty = Cause.pretty(cause).split("\n    at ")[0]?.trim() ?? "";
+  return pretty === "" ? "the command was rejected" : pretty;
+};
 
 const truncate = (text: string): string =>
   text.length <= MAX_MESSAGE_CHARS ? text : `${text.slice(0, MAX_MESSAGE_CHARS)}… [truncated]`;
