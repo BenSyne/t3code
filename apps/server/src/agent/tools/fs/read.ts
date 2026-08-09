@@ -15,6 +15,7 @@ import * as Tool from "effect/unstable/ai/Tool";
 import { describeFileSystemFailure, ToolFailure, toolFailure } from "../failure.ts";
 import { defineTool, type AgentTool, type AgentToolContext } from "../registry.ts";
 import { resolveExisting } from "../safePath.ts";
+import { optionalParam } from "../optionalParam.ts";
 
 /** Lines returned when the model does not ask for a range. */
 const DEFAULT_LINE_LIMIT = 2000;
@@ -35,10 +36,10 @@ const ReadTool = Tool.make("read", {
     filePath: Schema.String.annotate({
       description: "Path to the file, absolute or relative to the project root.",
     }),
-    offset: Schema.optional(
+    offset: optionalParam(
       Schema.Number.annotate({ description: "1-based line to start from. Defaults to 1." }),
     ),
-    limit: Schema.optional(
+    limit: optionalParam(
       Schema.Number.annotate({
         description: `Maximum lines to return. Defaults to ${DEFAULT_LINE_LIMIT}.`,
       }),

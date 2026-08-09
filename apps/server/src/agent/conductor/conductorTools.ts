@@ -31,6 +31,7 @@ import {
   type ReasoningEffort,
 } from "../model/reasoning.ts";
 import { ToolFailure, toolFailure } from "../tools/failure.ts";
+import { optionalParam } from "../tools/optionalParam.ts";
 import { defineTool, type AgentTool, type ToolContributor } from "../tools/registry.ts";
 import { checkApproval, checkTarget, type FleetPolicy } from "./fleet.ts";
 import type { OrchestrationClient } from "./OrchestrationClient.ts";
@@ -255,10 +256,10 @@ const delegate = (context: ConductorContext): AgentTool =>
         task: Schema.String.annotate({
           description: "The complete instructions for the other agent.",
         }),
-        model: Schema.optional(
+        model: optionalParam(
           Schema.String.annotate({ description: "Leave unset to use the provider's default." }),
         ),
-        reasoningEffort: Schema.optional(
+        reasoningEffort: optionalParam(
           Schema.String.annotate({
             description:
               "How hard the other agent should think: none, minimal, low, medium, high, xhigh, or max. " +
@@ -454,7 +455,7 @@ const setThreadState = (context: ConductorContext): AgentTool =>
         action: Schema.String.annotate({
           description: `One of: ${THREAD_STATE_ACTIONS.join(", ")}.`,
         }),
-        snoozeHours: Schema.optional(
+        snoozeHours: optionalParam(
           Schema.Number.annotate({
             description:
               "Required for snooze, ignored otherwise: how many hours to hide the thread for.",

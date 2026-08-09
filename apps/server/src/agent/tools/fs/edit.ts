@@ -16,6 +16,7 @@ import * as Tool from "effect/unstable/ai/Tool";
 import { describeFileSystemFailure, ToolFailure, toolFailure } from "../failure.ts";
 import { defineTool, type AgentTool, type AgentToolContext } from "../registry.ts";
 import { resolveExisting } from "../safePath.ts";
+import { optionalParam } from "../optionalParam.ts";
 
 const EditTool = Tool.make("edit", {
   description:
@@ -29,7 +30,7 @@ const EditTool = Tool.make("edit", {
       description: "Exact text to replace, including indentation.",
     }),
     newString: Schema.String.annotate({ description: "Text to put in its place." }),
-    replaceAll: Schema.optional(
+    replaceAll: optionalParam(
       Schema.Boolean.annotate({
         description: "Replace every occurrence instead of requiring exactly one.",
       }),

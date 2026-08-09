@@ -22,6 +22,7 @@ import { ToolFailure, toolFailure } from "../failure.ts";
 import { defineTool, type AgentTool, type AgentToolContext } from "../registry.ts";
 import { resolveSearchRoot } from "./glob.ts";
 import { isIgnoredPath } from "./ignore.ts";
+import { optionalParam } from "../optionalParam.ts";
 
 const MAX_MATCHES = 100;
 const MAX_FILES_SCANNED = 5000;
@@ -37,17 +38,17 @@ const GrepTool = Tool.make("grep", {
     pattern: Schema.String.annotate({
       description: 'JavaScript regular expression, e.g. "function\\\\s+parse".',
     }),
-    path: Schema.optional(
+    path: optionalParam(
       Schema.String.annotate({
         description: "Directory to search in. Defaults to the project root.",
       }),
     ),
-    include: Schema.optional(
+    include: optionalParam(
       Schema.String.annotate({
         description: 'Glob limiting which files are searched, e.g. "**/*.ts".',
       }),
     ),
-    caseInsensitive: Schema.optional(
+    caseInsensitive: optionalParam(
       Schema.Boolean.annotate({ description: "Ignore case. Defaults to false." }),
     ),
   }),

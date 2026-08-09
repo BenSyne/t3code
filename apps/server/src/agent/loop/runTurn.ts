@@ -134,14 +134,22 @@ export interface RunTurnResult {
  */
 const MAX_UNREADABLE_RESPONSES = 2;
 
-/** What the model is told after it invents a tool. Short: it has the list already. */
+/**
+ * What the model is told after a response the toolkit could not read.
+ *
+ * Deliberately does not claim the tool name was wrong. A call fails to decode
+ * for two different reasons — an invented name, or a real name with an argument
+ * of the wrong type — and the union error that comes back cannot distinguish
+ * them for us. Naming the wrong cause sends the model looking in the wrong
+ * place, which is worse than saying less.
+ */
 const RETRY_AFTER_UNREADABLE = Prompt.make([
   {
     role: "user",
     content: [
       {
         type: "text",
-        text: "Your last response named a tool that does not exist, so none of it could be run. Use only the tools you were given, with their exact names, and try again.",
+        text: "Your last response contained a tool call that could not be read, so none of it ran. Use only the tools you were given, with their exact names, and check that every argument matches the type its schema declares. Omit optional arguments you do not need rather than passing an empty value.",
       },
     ],
   },
@@ -169,11 +177,15 @@ export const runTurn = Effect.fn("t3agent/runTurn")(function* (input: RunTurnInp
     );
 
     if (attempt._tag === "Failure") {
-      // A response the toolkit cannot decode is nearly always one hallucinated
-      // tool name, and the whole turn used to die on it — the user got a wall
-      // of `Expected "read" at [2]["name"]` and lost everything the agent had
-      // already done. That is an ordinary mistake a model can correct once
-      // told, so tell it and let it try again.
+      // A response the toolkit cannot decode used to kill the whole turn — the
+      // user got a wall of `Expected "read" at [2]["name"]` and lost everything
+      // the agent had already done. That is an ordinary mistake a model can
+      // correct once told, so tell it and let it try again.
+      //
+      // This is the second line of defence, not the first. The common cause was
+      // `null` sent for an optional argument, and that is fixed at the schema
+      // (see `optionalParam`) so it never reaches here. What is left is a model
+      // genuinely inventing a name or a type, which a nudge sometimes fixes.
       //
       // `AiError` is the outer tag and the specific kind lives on `cause`.
       // Only this one is worth retrying: a network or auth failure nudged and
