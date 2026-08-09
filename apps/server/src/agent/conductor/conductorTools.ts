@@ -106,6 +106,61 @@ const listProjects = (context: ConductorContext): AgentTool =>
       })),
   );
 
+/**
+ * The most recently touched threads, newest first.
+ *
+ * A cap rather than the lot: a long-lived project accumulates hundreds, the
+ * agent almost always wants the recent ones, and quietly returning everything
+ * would spend the context window on threads from months ago. When the cap
+ * bites, the result says so — a truncated list that claims to be complete is
+ * how an agent concludes something does not exist.
+ */
+const THREAD_LIST_LIMIT = 40;
+
+const listThreads = (context: ConductorContext): AgentTool =>
+  defineTool(
+    Tool.make("list_threads", {
+      description:
+        "List the recent threads in a project — including ones you did not start — so you can " +
+        "read what another agent is doing or has already done. Pair with read_delegated_thread.",
+      parameters: Schema.Struct({
+        projectId: Schema.String.annotate({ description: "From list_projects." }),
+      }),
+      success: Schema.Struct({
+        threads: Schema.Array(
+          Schema.Struct({
+            threadId: Schema.String,
+            title: Schema.String,
+            providerInstanceId: Schema.String,
+            status: Schema.String,
+            updatedAt: Schema.String,
+          }),
+        ),
+        /** Present only when older threads were left out. */
+        omitted: Schema.optional(Schema.Number),
+      }),
+      failure: ToolFailure,
+      failureMode: "return",
+    }),
+    Effect.fnUntraced(function* (params) {
+      const all = yield* context.client.listThreads(params.projectId);
+      const recent = [...all]
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+        .slice(0, THREAD_LIST_LIMIT);
+      const omitted = all.length - recent.length;
+      return {
+        threads: recent.map((thread) => ({
+          threadId: String(thread.threadId),
+          title: thread.title,
+          providerInstanceId: String(thread.providerInstanceId),
+          status: thread.status,
+          updatedAt: thread.updatedAt,
+        })),
+        ...(omitted > 0 ? { omitted } : {}),
+      };
+    }),
+  );
+
 const delegate = (context: ConductorContext): AgentTool =>
   defineTool(
     Tool.make("delegate_to_agent", {
@@ -241,7 +296,8 @@ const readDelegated = (context: ConductorContext): AgentTool =>
   defineTool(
     Tool.make("read_delegated_thread", {
       description:
-        "Read what a thread has produced so far. Use after delegate_to_agent to collect the result.",
+        "Read what a thread has produced so far. Use after delegate_to_agent to collect a result, " +
+        "or with a thread id from list_threads to read work you did not start.",
       parameters: Schema.Struct({ threadId: Schema.String }),
       success: Schema.Struct({ transcript: Schema.String }),
       failure: ToolFailure,
@@ -346,6 +402,7 @@ export function conductorContributor(context: ConductorContext | null): ToolCont
           : [
               listProviders(context),
               listProjects(context),
+              listThreads(context),
               delegate(context),
               readDelegated(context),
               stopDelegated(context),

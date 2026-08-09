@@ -146,6 +146,12 @@ thread, via the branch control near the composer.`,
 - \`skill\` — load a skill's full instructions on demand
 - \`task\` — hand a self-contained job to a fresh sub-agent
 
+With "Let this agent run other agents" turned on, seven more appear:
+\`list_providers\`, \`list_projects\`, \`list_threads\`, \`delegate_to_agent\`,
+\`read_delegated_thread\`, \`stop_delegated_thread\`, \`revert_delegated_thread\`.
+\`list_threads\` covers every thread in a project, not only ones you started, so
+you can read what another agent is doing right now.
+
 Every file path is checked twice: once as text, once against where it really
 points. A symlink inside the project that resolves outside it is refused.
 
