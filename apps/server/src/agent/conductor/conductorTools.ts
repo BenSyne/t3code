@@ -24,7 +24,12 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Tool from "effect/unstable/ai/Tool";
 
-import { asReasoningEffort, REASONING_EFFORTS } from "../model/reasoning.ts";
+import {
+  asReasoningEffort,
+  nearestAcceptedEffort,
+  REASONING_EFFORTS,
+  type ReasoningEffort,
+} from "../model/reasoning.ts";
 import { ToolFailure, toolFailure } from "../tools/failure.ts";
 import { defineTool, type AgentTool, type ToolContributor } from "../tools/registry.ts";
 import { checkApproval, checkTarget, type FleetPolicy } from "./fleet.ts";
@@ -262,7 +267,11 @@ const delegate = (context: ConductorContext): AgentTool =>
           }),
         ),
       }),
-      success: Schema.Struct({ threadId: Schema.String }),
+      success: Schema.Struct({
+        threadId: Schema.String,
+        /** Present only when the requested reasoning level was adjusted. */
+        note: Schema.optional(Schema.String),
+      }),
       failure: ToolFailure,
       failureMode: "return",
     }),
@@ -307,22 +316,27 @@ const delegate = (context: ConductorContext): AgentTool =>
         );
       }
 
-      // Checked against the chosen model, not just the global vocabulary: a
-      // lineup mixes models that take the full range with models that take a
-      // subset, and an effort outside the subset is rejected by the provider
-      // at the first request — which reaches the user as a delegation that
-      // failed for no stated reason. Only enforced where the model actually
-      // advertises a set; an empty one means "not advertised", not "none
-      // allowed", and refusing on that would break every driver that does not
-      // publish descriptors.
+      // Snapped to what the chosen model actually offers, rather than
+      // refused. This used to be a hard error, and it fired constantly — the
+      // agent would ask GPT-5.6-Sol for "minimal" on a lineup that starts at
+      // "low" and burn a round trip learning something the ordering already
+      // implied. The scale is ordered, so an unavailable level still says
+      // which direction was wanted.
+      //
+      // Only where the model advertises a set: an empty one means "not
+      // advertised", not "none allowed", and snapping on that would break
+      // every driver that publishes no descriptors.
+      let effortSent = effort;
+      let effortNote: string | undefined;
       if (effort !== undefined) {
         const models = yield* context.client.listModels(params.providerInstanceId);
         const chosen = models.find((candidate) => candidate.slug === model);
-        if (chosen !== undefined && chosen.reasoningEfforts.length > 0) {
-          if (!chosen.reasoningEfforts.includes(effort)) {
-            return yield* toolFailure(
-              `${chosen.name} does not accept "${effort}". It accepts: ${chosen.reasoningEfforts.join(", ")}.`,
-            );
+        const accepted = chosen?.reasoningEfforts ?? [];
+        if (accepted.length > 0) {
+          const snapped = nearestAcceptedEffort(effort, accepted as ReadonlyArray<ReasoningEffort>);
+          if (snapped !== undefined && snapped !== effort) {
+            effortSent = snapped;
+            effortNote = `${chosen?.name ?? model} does not offer "${effort}"; used "${snapped}".`;
           }
         }
       }
@@ -344,7 +358,9 @@ const delegate = (context: ConductorContext): AgentTool =>
         modelSelection: {
           instanceId: target.instanceId,
           model,
-          ...(effort === undefined ? {} : { options: [{ id: "reasoningEffort", value: effort }] }),
+          ...(effortSent === undefined
+            ? {}
+            : { options: [{ id: "reasoningEffort", value: effortSent }] }),
         },
         // Delegated work runs unattended by definition — nobody is watching it
         // to answer a prompt — so it runs in the mode that does not raise them.
@@ -380,7 +396,10 @@ const delegate = (context: ConductorContext): AgentTool =>
         );
       }
 
-      return { threadId: String(threadId) };
+      return {
+        threadId: String(threadId),
+        ...(effortNote === undefined ? {} : { note: effortNote }),
+      };
     }),
   );
 

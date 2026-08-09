@@ -102,3 +102,38 @@ export function reasoningEffortsFor(
     return effort === undefined ? [] : [effort];
   });
 }
+
+/**
+ * The closest level a model will actually accept.
+ *
+ * The scale is ordered, so a request the target does not offer still says which
+ * direction was wanted: "minimal" on a lineup starting at "low" means the least
+ * available, not nothing. Refusing outright — which is what this replaces —
+ * costs a whole round trip to learn something the ordering already implies.
+ *
+ * Ties go to the more thorough level. Spending slightly more than asked is a
+ * worse answer arriving; spending less risks the task not being done properly,
+ * which is what the caller was trying to avoid by naming an effort at all.
+ */
+export function nearestAcceptedEffort(
+  requested: ReasoningEffort,
+  accepted: ReadonlyArray<ReasoningEffort>,
+): ReasoningEffort | undefined {
+  if (accepted.length === 0) {
+    return undefined;
+  }
+  if (accepted.includes(requested)) {
+    return requested;
+  }
+  const target = REASONING_EFFORTS.indexOf(requested);
+  return accepted.reduce((best, candidate) => {
+    const bestGap = Math.abs(REASONING_EFFORTS.indexOf(best) - target);
+    const candidateGap = Math.abs(REASONING_EFFORTS.indexOf(candidate) - target);
+    if (candidateGap !== bestGap) {
+      return candidateGap < bestGap ? candidate : best;
+    }
+    return REASONING_EFFORTS.indexOf(candidate) > REASONING_EFFORTS.indexOf(best)
+      ? candidate
+      : best;
+  });
+}
