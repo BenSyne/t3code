@@ -6,7 +6,7 @@ install — you give it an API key and it works.
 ## Setting it up
 
 1. Open **Settings → Providers** and add a **Theo** instance.
-2. Choose a **Provider**: Anthropic, OpenAI, OpenRouter, or OpenAI-compatible.
+2. Choose a **Provider**: Anthropic, OpenAI, OpenRouter, Cerebras, or OpenAI-compatible.
 3. Set the **API key variable** to the name of an environment variable — `ANTHROPIC_API_KEY`,
    `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, whatever you like.
 4. In the **Environment variables** section — just above the config fields — click **Add**, enter
@@ -16,6 +16,16 @@ install — you give it an API key and it works.
 5. Pick a **Default model**, or leave it blank for the provider's default.
 
 That is the whole setup. Start a thread and pick Theo from the model picker.
+
+### How hard it thinks
+
+Models that support it get a **Reasoning** control next to the model in the picker, from `none`
+through `max`. It costs time and money roughly in proportion, so raise it for design and debugging
+and drop it for mechanical work. **Default** leaves the choice to the provider, which is not the
+same as off — some models reason unless told not to.
+
+Only the levels a given model actually accepts are offered, so the list changes as you switch
+models. A model with no reasoning control shows none.
 
 ### Running against a local model
 
@@ -53,8 +63,43 @@ use. Local (stdio) servers are supported; remote HTTP servers are not yet.
 **Sub-agents** — can hand a self-contained job to a fresh agent and get back a summary, which keeps
 a long search from filling the main conversation.
 
-**Other agents** — can start threads on Codex, Claude, Cursor, Grok, or OpenCode and read what they
-produced. Those appear in your sidebar as ordinary threads that you can interrupt or revert.
+**Other agents** — see below. Off by default.
+
+## Running your other agents
+
+Theo can drive the rest of T3 Code on your behalf: start work on Codex, Claude, Cursor, Grok or
+OpenCode, follow it, and tidy up after it. This is off until you turn it on.
+
+Switch on **Let this agent run other agents** in the instance's settings. It is off by default
+because these tools start real threads on other providers, which spends money on whatever key those
+providers use.
+
+Once on, it can:
+
+- **See what is available** — which agents are set up, whether each one bills per token or draws on
+  a subscription you have already paid for, and which models each can be pointed at.
+- **Delegate** — start a thread with a task, choosing the agent, the model, and how hard to think.
+  From a phone: "review this PR with Codex and Claude in parallel and tell me where they disagree."
+- **Follow the work** — read a thread back, including what it actually did and anything that failed,
+  not just what it said about itself.
+- **Stay with it** — send a follow-up to correct or extend work rather than starting over, answer a
+  question a thread it started is blocked on, or interrupt and revert.
+- **Tidy up** — settle, archive, snooze, pin or rename threads, and create a project for a
+  directory.
+
+Everything it starts is an ordinary thread. It appears in your sidebar, streams live, and you can
+interrupt, revert, or take it over at any point.
+
+Two things it will not do. It cannot **delete** anything — threads or projects — because deletion
+is the one action with no undo behind it. And it cannot change another thread's **runtime mode**, so
+it can never widen what some other agent is allowed to do.
+
+Answering **approval prompts** on your behalf is separate, off, and behind its own setting. Approval
+is how you stay in the loop; leaving it off means Theo tells you what is waiting instead of deciding
+for you. Answering a _question_ a thread asked is different and allowed, but only on threads Theo
+started itself — it will not put words in your mouth in a conversation it was never part of.
+
+By default it will run at most four delegated threads at once.
 
 ## Permissions
 
