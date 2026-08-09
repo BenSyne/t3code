@@ -14,9 +14,10 @@
  */
 import {
   CommandId,
+  ApprovalRequestId,
   MessageId,
+  ProjectId,
   ThreadId,
-  type ProviderInstanceId,
   type RuntimeMode,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -157,12 +158,14 @@ const delegate = (context: ConductorContext): AgentTool =>
         type: "thread.create",
         commandId: CommandId.make(yield* context.nextId),
         threadId,
-        projectId: params.projectId as never,
+        projectId: ProjectId.make(params.projectId),
         title: params.title,
-        modelSelection: {
-          providerInstanceId: target.instanceId as ProviderInstanceId,
-          model,
-        } as never,
+        // `instanceId`, not `providerInstanceId`. The whole command was cast
+        // to `never` before this file was wired to anything, and the cast hid
+        // the wrong field name until a real delegation failed with a decode
+        // error the tool could only report as "unknown error". The casts are
+        // gone; the schema checks these payloads now.
+        modelSelection: { instanceId: target.instanceId, model },
         // Delegated work runs unattended by definition — nobody is watching it
         // to answer a prompt — so it runs in the mode that does not raise them.
         runtimeMode: "auto" satisfies RuntimeMode,
@@ -170,7 +173,7 @@ const delegate = (context: ConductorContext): AgentTool =>
         branch: null,
         worktreePath: null,
         createdAt: yield* context.nowIso,
-      } as never);
+      });
 
       if (!created.accepted) {
         return yield* toolFailure(`Could not start the thread: ${created.detail ?? "rejected"}`);
@@ -187,8 +190,9 @@ const delegate = (context: ConductorContext): AgentTool =>
           attachments: [],
         },
         runtimeMode: "auto" satisfies RuntimeMode,
+        interactionMode: "default",
         createdAt: yield* context.nowIso,
-      } as never);
+      });
 
       if (!started.accepted) {
         return yield* toolFailure(
@@ -234,7 +238,7 @@ const stopDelegated = (context: ConductorContext): AgentTool =>
         commandId: CommandId.make(yield* context.nextId),
         threadId: ThreadId.make(params.threadId),
         createdAt: yield* context.nowIso,
-      } as never);
+      });
       return { stopped: result.accepted };
     }),
   );
@@ -258,7 +262,7 @@ const revertDelegated = (context: ConductorContext): AgentTool =>
         threadId: ThreadId.make(params.threadId),
         turnCount: Math.max(0, Math.floor(params.turnCount)),
         createdAt: yield* context.nowIso,
-      } as never);
+      });
       return { reverted: result.accepted };
     }),
   );
@@ -292,10 +296,10 @@ const approveRequest = (context: ConductorContext): AgentTool =>
         type: "thread.approval.respond",
         commandId: CommandId.make(yield* context.nextId),
         threadId: ThreadId.make(params.threadId),
-        requestId: params.requestId as never,
+        requestId: ApprovalRequestId.make(params.requestId),
         decision: params.approve ? "accept" : "decline",
         createdAt: yield* context.nowIso,
-      } as never);
+      });
       return { answered: result.accepted };
     }),
   );
