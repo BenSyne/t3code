@@ -13,6 +13,7 @@ import type * as FileSystem from "effect/FileSystem";
 import type { HttpClient } from "effect/unstable/http";
 import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
+import type { McpServers } from "../../agent/mcp/serverConfig.ts";
 import type { PermissionRule } from "../../agent/permission/rules.ts";
 import type { BackendKind } from "../../agent/model/resolveLanguageModel.ts";
 import type { ResolvedCredential } from "../../agent/model/credentials.ts";
@@ -34,6 +35,7 @@ export interface T3AgentAdapterOptions {
   readonly permissionRules: ReadonlyArray<PermissionRule>;
   /** Where conversations are written so they survive a restart. */
   readonly transcriptDirectory: string;
+  readonly mcpServers: McpServers;
 }
 
 /**

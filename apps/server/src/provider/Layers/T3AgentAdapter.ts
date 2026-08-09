@@ -32,6 +32,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Scope from "effect/Scope";
 import * as Prompt from "effect/unstable/ai/Prompt";
 import { HttpClient } from "effect/unstable/http";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
@@ -51,6 +52,8 @@ import { makeTranscriptStore } from "../../agent/state/TranscriptStore.ts";
 import { resolveLanguageModel } from "../../agent/model/resolveLanguageModel.ts";
 import { readProjectContext } from "../../agent/prompt/agentsMd.ts";
 import { buildSystemPrompt } from "../../agent/prompt/systemPrompt.ts";
+import { connectAll } from "../../agent/mcp/McpClientPool.ts";
+import { mcpContributor } from "../../agent/mcp/mcpTools.ts";
 import { coreTools } from "../../agent/tools/core.ts";
 import { buildToolkit, resolveTools } from "../../agent/tools/registry.ts";
 import { ProviderAdapterRequestError } from "../Errors.ts";
@@ -186,7 +189,28 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         requestApproval: (request: { readonly toolName: string; readonly target: string }) =>
           askForApproval({ threadId: input.threadId, mode: input.runtimeMode, ...request }),
       };
-      const resolved = yield* resolveTools([coreTools], toolContext);
+      // Connected once per session rather than per turn: starting a subprocess
+      // for every message would be slow and would lose whatever state the
+      // server keeps between calls.
+      const pool = yield* connectAll({
+        servers: options.mcpServers,
+        spawner,
+        baseEnv: options.commandEnv,
+        workspaceRoot,
+        // The pool's reader fibers and subprocesses belong to the instance, not
+        // to the request that happened to start the session.
+      }).pipe(Effect.provideService(Scope.Scope, instanceScope));
+
+      for (const status of pool.statuses) {
+        if (status.state === "failed") {
+          yield* events.warning({
+            threadId: input.threadId,
+            message: `MCP server "${status.name}" is unavailable: ${status.detail ?? "unknown reason"}. Its tools are not available this session.`,
+          });
+        }
+      }
+
+      const resolved = yield* resolveTools([coreTools, mcpContributor(pool.servers)], toolContext);
       const toolkit = yield* buildToolkit(resolved.tools);
 
       for (const dropped of resolved.dropped) {

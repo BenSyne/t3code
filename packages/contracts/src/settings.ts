@@ -533,6 +533,14 @@ export const T3AgentSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
+    /**
+     * MCP servers, in the same shape every other agent uses, so a config the
+     * user already wrote can be pasted in unchanged.
+     */
+    mcpServers: Schema.Record(Schema.String, Schema.Unknown).pipe(
+      Schema.withDecodingDefault(Effect.succeed({})),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
   },
   {
     order: ["backend", "credentialEnvVar", "baseUrl", "defaultModel"],
