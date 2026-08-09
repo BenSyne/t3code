@@ -40,6 +40,7 @@ import * as Prompt from "effect/unstable/ai/Prompt";
 import { HttpClient } from "effect/unstable/http";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
+import { describeTurnFailure } from "../../agent/events/failureMessage.ts";
 import { toPricingTotals } from "../../agent/events/usage.ts";
 import { priceUsage } from "../../usage/usagePricing.ts";
 import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
@@ -451,7 +452,10 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         threadId,
         turnId,
         state: "failed",
-        errorMessage: describeFailure(outcome.cause),
+        // The conversation's size lets a context overflow say whether trimming
+        // the thread could possibly help, or whether the model was never big
+        // enough to hold the agent's own instructions.
+        errorMessage: describeTurnFailure(outcome.cause, context.usage.contextTokens),
       });
       return;
     }
@@ -648,9 +652,4 @@ function requestTypeFor(toolName: string): CanonicalRequestType {
     case "read":
       return "file_read_approval";
   }
-}
-
-function describeFailure(cause: unknown): string {
-  const text = cause instanceof Error ? cause.message : String(cause);
-  return text.trim() === "" ? "The agent turn failed." : text;
 }
