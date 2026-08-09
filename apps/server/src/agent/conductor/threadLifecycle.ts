@@ -97,6 +97,34 @@ export function lifecycleOf(thread: ThreadLifecycleFields, nowIso: string): Thre
   return thread.settledAt !== null ? "settled" : "active";
 }
 
+/**
+ * Order threads so the ones that need someone come first.
+ *
+ * Newest-first alone has a hole: a thread blocked on a question stops being
+ * touched the moment it blocks, so its timestamp freezes and it sinks. Past
+ * the list cap it disappears entirely — and a thread waiting for an answer is
+ * the one thing in the list that will never resolve itself. It is exactly the
+ * entry that must not be the one dropped.
+ *
+ * Blocked first, then most recent. Within blocked, still newest-first, so the
+ * ordering stays predictable rather than becoming a second ranking to learn.
+ */
+export function orderForAttention<
+  T extends {
+    readonly awaitingInput: boolean;
+    readonly awaitingApproval: boolean;
+    readonly updatedAt: string;
+  },
+>(threads: ReadonlyArray<T>): ReadonlyArray<T> {
+  const blocked = (thread: T): boolean => thread.awaitingInput || thread.awaitingApproval;
+  return [...threads].sort((left, right) => {
+    if (blocked(left) !== blocked(right)) {
+      return blocked(left) ? -1 : 1;
+    }
+    return right.updatedAt.localeCompare(left.updatedAt);
+  });
+}
+
 export type ThreadStatePlan =
   | { readonly _tag: "Command"; readonly command: DispatchableClientOrchestrationCommand }
   | { readonly _tag: "Refused"; readonly reason: string };
