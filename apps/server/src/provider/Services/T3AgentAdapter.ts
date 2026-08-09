@@ -13,6 +13,7 @@ import type * as FileSystem from "effect/FileSystem";
 import type { HttpClient } from "effect/unstable/http";
 import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
+import type { PermissionRule } from "../../agent/permission/rules.ts";
 import type { BackendKind } from "../../agent/model/resolveLanguageModel.ts";
 import type { ResolvedCredential } from "../../agent/model/credentials.ts";
 import type { ProviderAdapterError } from "../Errors.ts";
@@ -29,6 +30,8 @@ export interface T3AgentAdapterOptions {
   readonly commandEnv: Record<string, string>;
   /** Context window for the usage meter, or null when the model is unknown to us. */
   readonly contextWindowFor: (model: string) => number | null;
+  /** Rules the user set, evaluated after the mode default. */
+  readonly permissionRules: ReadonlyArray<PermissionRule>;
 }
 
 /**

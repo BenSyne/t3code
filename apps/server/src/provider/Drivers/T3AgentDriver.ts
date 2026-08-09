@@ -139,6 +139,7 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
         defaultModel: defaultModelFor(config),
         commandEnv: instanceEnv as Record<string, string>,
         contextWindowFor: (model) => contextWindowFor(backend, model),
+        permissionRules: [],
         ...(baseUrl === undefined ? {} : { baseUrl }),
       });
 

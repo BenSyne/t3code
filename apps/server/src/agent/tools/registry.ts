@@ -24,7 +24,7 @@ import type * as Tool from "effect/unstable/ai/Tool";
 import * as Toolkit from "effect/unstable/ai/Toolkit";
 import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
-import { toolFailure } from "./failure.ts";
+import { toolFailure, type ToolFailure } from "./failure.ts";
 
 /**
  * What a tool is allowed to reach.
@@ -43,7 +43,22 @@ export interface AgentToolContext {
    * command sees the same `PATH` and credentials the rest of the instance does.
    */
   readonly commandEnv: Record<string, string>;
+  /**
+   * Ask before acting.
+   *
+   * Wrapped around handlers by {@link withApproval} rather than called inside
+   * them, so a tool cannot forget to ask: forgetting means not opting in, and
+   * the tool then has no approval path at all rather than a broken one.
+   */
+  readonly requestApproval: (input: {
+    readonly toolName: string;
+    readonly target: string;
+  }) => Effect.Effect<ApprovalOutcome>;
 }
+
+export type ApprovalOutcome =
+  | { readonly _tag: "Allowed" }
+  | { readonly _tag: "Denied"; readonly reason: string };
 
 /** A tool paired with the handler that runs it. Build one with {@link defineTool}. */
 export interface AgentTool {
@@ -51,7 +66,18 @@ export interface AgentTool {
   readonly handler: ErasedHandler;
 }
 
-type ErasedHandler = (params: never, context: never) => Effect.Effect<unknown, unknown>;
+/**
+ * A handler with its schemas forgotten but its failure channel named.
+ *
+ * The success type genuinely varies per tool and is erased. The failure type
+ * does not: every tool declares `ToolFailure`, and the AI stack may raise its
+ * own error, so saying so keeps `unknown` out of the error channel where it
+ * would silently disable the checking that catches an unhandled failure.
+ */
+type ErasedHandler = (
+  params: never,
+  context: never,
+) => Effect.Effect<unknown, ToolFailure | AiError.AiError>;
 
 /**
  * Pair a tool with its handler, checked against that tool's own schemas.
@@ -81,6 +107,34 @@ export function defineTool<T extends Tool.Any>(
       ),
     );
   return { tool, handler: contained as ErasedHandler };
+}
+
+/**
+ * Gate a tool behind approval.
+ *
+ * Wraps an already-defined tool, so the tool's own handler never has to think
+ * about permissions and cannot be written in a way that skips them. A denial
+ * comes back as an ordinary tool failure: the model is told plainly that the
+ * user said no, which is something it can respond to sensibly, rather than
+ * being left to infer it from a crash.
+ */
+export function withApproval(
+  entry: AgentTool,
+  context: AgentToolContext,
+  describeTarget: (params: never) => string,
+): AgentTool {
+  const gated: ErasedHandler = (params, handlerContext) =>
+    Effect.flatMap(
+      context.requestApproval({
+        toolName: entry.tool.name,
+        target: describeTarget(params),
+      }),
+      (outcome): Effect.Effect<unknown, ToolFailure | AiError.AiError> =>
+        outcome._tag === "Allowed"
+          ? entry.handler(params, handlerContext)
+          : Effect.fail(toolFailure(outcome.reason)),
+    );
+  return { tool: entry.tool, handler: gated };
 }
 
 /** One line, no stack: the model cannot act on a stack trace and pays for it. */

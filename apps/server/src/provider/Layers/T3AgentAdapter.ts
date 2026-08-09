@@ -18,7 +18,14 @@
  *
  * @module provider/Layers/T3AgentAdapter
  */
-import { type ProviderSession, TurnId } from "@t3tools/contracts";
+import {
+  RuntimeRequestId,
+  type CanonicalRequestType,
+  type ProviderSession,
+  type RuntimeMode,
+  type ThreadId,
+  TurnId,
+} from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -33,6 +40,9 @@ import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
 import { makeRuntimeEventEmitter } from "../../agent/events/emitter.ts";
 import { setSessionStatus, type AgentSessionContext } from "../../agent/loop/AgentSession.ts";
 import { makeAgentConcurrency } from "../../agent/loop/concurrency.ts";
+import { decidePermission } from "../../agent/permission/decide.ts";
+import { makeApprovalGate } from "../../agent/permission/Gate.ts";
+import { subjectForTool } from "../../agent/permission/profile.ts";
 import { runTurn } from "../../agent/loop/runTurn.ts";
 import { createSessionStore } from "../../agent/loop/sessionStore.ts";
 import { resolveLanguageModel } from "../../agent/model/resolveLanguageModel.ts";
@@ -56,10 +66,83 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
   // returns immediately, so the turn must outlive the call that started it and
   // die with the instance rather than with the request.
   const instanceScope = yield* Effect.scope;
+  const gate = yield* makeApprovalGate;
+  // A request event must carry the turn it belongs to, and the tool that raises
+  // it is several frames below the turn that started it.
+  const activeTurns = new Map<ThreadId, TurnId>();
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   const uuid = crypto.randomUUIDv4.pipe(Effect.orDie);
   const events = yield* makeRuntimeEventEmitter({ provider: PROVIDER, uuid, nowIso });
+
+  /**
+   * Decide, and ask the user if the decision is to ask.
+   *
+   * The wait is a `Deferred` held by the gate; the client answers through
+   * `respondToRequest`. If the session closes first, the gate denies everything
+   * outstanding, so no tool is left waiting on a person who has gone away.
+   */
+  const askForApproval = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly mode: RuntimeMode;
+    readonly toolName: string;
+    readonly target: string;
+  }) {
+    const outcome = decidePermission({
+      mode: input.mode,
+      toolName: input.toolName,
+      target: input.target,
+      rules: options.permissionRules,
+    });
+
+    if (outcome.decision === "allow") {
+      return { _tag: "Allowed" as const };
+    }
+    if (outcome.decision === "deny") {
+      return {
+        _tag: "Denied" as const,
+        reason: `Not permitted: ${outcome.reason ?? "a rule you set"} blocks this.`,
+      };
+    }
+
+    const requestId = RuntimeRequestId.make(yield* uuid);
+    const turnId = activeTurns.get(input.threadId);
+    const requestType = requestTypeFor(input.toolName);
+    const detail =
+      outcome.reason === undefined ? input.target : `${input.target} — ${outcome.reason}`;
+
+    if (turnId !== undefined) {
+      yield* events.requestOpened({
+        threadId: input.threadId,
+        turnId,
+        requestId,
+        requestType,
+        detail,
+        args: { toolName: input.toolName, target: input.target },
+      });
+    }
+
+    const decision = yield* gate.await({
+      requestId,
+      toolName: input.toolName,
+      target: input.target,
+      reason: outcome.reason,
+    });
+
+    if (turnId !== undefined) {
+      yield* events.requestResolved({
+        threadId: input.threadId,
+        turnId,
+        requestId,
+        requestType,
+        decision,
+      });
+    }
+
+    return decision === "approved"
+      ? { _tag: "Allowed" as const }
+      : { _tag: "Denied" as const, reason: "You declined this action." };
+  });
 
   const startSession: T3AgentAdapterShape["startSession"] = Effect.fn("t3agent/startSession")(
     function* (input) {
@@ -93,6 +176,8 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         fileSystem,
         spawner,
         commandEnv: options.commandEnv,
+        requestApproval: (request: { readonly toolName: string; readonly target: string }) =>
+          askForApproval({ threadId: input.threadId, mode: input.runtimeMode, ...request }),
       };
       const resolved = yield* resolveTools([coreTools], toolContext);
       const toolkit = yield* buildToolkit(resolved.tools);
@@ -168,6 +253,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
     setSessionStatus(context, "ready", yield* nowIso);
     context.interrupted = false;
     context.running = null;
+    activeTurns.delete(threadId);
 
     if (outcome._tag !== "Success") {
       yield* events.turnCompleted({
@@ -200,6 +286,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
       const threadId = input.threadId;
 
       context.interrupted = false;
+      activeTurns.set(threadId, turnId);
       setSessionStatus(context, "running", yield* nowIso);
       yield* events.turnStarted({ threadId, turnId, model: context.model });
 
@@ -219,6 +306,9 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
 
   const stopContext = Effect.fnUntraced(function* (context: AgentSessionContext) {
     context.interrupted = true;
+    // Before anything else: a tool parked on an approval would otherwise wait
+    // forever for a person who is no longer there, and the turn would never end.
+    yield* gate.rejectAll;
     const running = context.running;
     if (running !== null) {
       yield* Fiber.interrupt(running);
@@ -253,15 +343,24 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
       // with no result in the history and the next request would fail on it.
       context.interrupted = true;
     }),
-    respondToRequest: Effect.fn("t3agent/respondToRequest")(function* (threadId, requestId) {
-      yield* store.require(threadId);
-      // Load-bearing wording: matched by substring upstream. See module note.
-      return yield* new ProviderAdapterRequestError({
-        provider: PROVIDER,
-        method: "permission.reply",
-        detail: `Unknown pending permission request: ${requestId}`,
-      });
-    }),
+    respondToRequest: Effect.fn("t3agent/respondToRequest")(
+      function* (threadId, requestId, decision) {
+        yield* store.require(threadId);
+        const answered = yield* gate.resolve(
+          requestId,
+          decision === "accept" || decision === "acceptForSession" ? "approved" : "denied",
+        );
+        if (answered) {
+          return;
+        }
+        // Load-bearing wording: matched by substring upstream. See module note.
+        return yield* new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "permission.reply",
+          detail: `Unknown pending permission request: ${requestId}`,
+        });
+      },
+    ),
     respondToUserInput: Effect.fn("t3agent/respondToUserInput")(function* (threadId, requestId) {
       yield* store.require(threadId);
       // Load-bearing wording: matched by substring upstream. See module note.
@@ -295,6 +394,18 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
     },
   } satisfies T3AgentAdapterShape;
 });
+
+/** Which prompt the client shows. A wrong pick renders the wrong dialog. */
+function requestTypeFor(toolName: string): CanonicalRequestType {
+  switch (subjectForTool(toolName)) {
+    case "command":
+      return "command_execution_approval";
+    case "edit":
+      return "file_change_approval";
+    case "read":
+      return "file_read_approval";
+  }
+}
 
 function describeFailure(cause: unknown): string {
   const text = cause instanceof Error ? cause.message : String(cause);

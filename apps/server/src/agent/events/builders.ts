@@ -24,10 +24,12 @@
  */
 import type {
   CanonicalItemType,
+  CanonicalRequestType,
   EventId,
   ProviderDriverKind,
   ProviderRuntimeEvent,
   RuntimeItemId,
+  RuntimeRequestId,
   ThreadId,
   ThreadTokenUsageSnapshot,
   TurnId,
@@ -156,6 +158,49 @@ export function toolItemEvent(
       ...(ctx.detail === undefined || ctx.detail === "" ? {} : { detail: ctx.detail }),
       ...(ctx.data === undefined ? {} : { data: ctx.data }),
     },
+  };
+}
+
+/**
+ * The agent is waiting for a human.
+ *
+ * `requestType` is what the client keys its approval UI on, so a command and a
+ * file change get the prompt each deserves.
+ */
+export function requestOpenedEvent(
+  ctx: TurnContext & {
+    readonly requestId: RuntimeRequestId;
+    readonly requestType: CanonicalRequestType;
+    readonly detail: string;
+    readonly args?: Record<string, unknown> | undefined;
+  },
+): ProviderRuntimeEvent {
+  return {
+    ...base(ctx),
+    type: "request.opened",
+    turnId: ctx.turnId,
+    requestId: ctx.requestId,
+    payload: {
+      requestType: ctx.requestType,
+      detail: ctx.detail,
+      ...(ctx.args === undefined ? {} : { args: ctx.args }),
+    },
+  };
+}
+
+export function requestResolvedEvent(
+  ctx: TurnContext & {
+    readonly requestId: RuntimeRequestId;
+    readonly requestType: CanonicalRequestType;
+    readonly decision: string;
+  },
+): ProviderRuntimeEvent {
+  return {
+    ...base(ctx),
+    type: "request.resolved",
+    turnId: ctx.turnId,
+    requestId: ctx.requestId,
+    payload: { requestType: ctx.requestType, decision: ctx.decision },
   };
 }
 
