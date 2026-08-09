@@ -26,6 +26,7 @@ import * as NodePath from "node:path";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../../config.ts";
+import * as UsageService from "../../usage/UsageService.ts";
 import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
 import { McpServerConfig, type McpServers } from "../../agent/mcp/serverConfig.ts";
 import { resolveCredential } from "../../agent/model/credentials.ts";
@@ -75,6 +76,7 @@ function decodeMcpServers(raw: Record<string, unknown>): McpServers {
 export type T3AgentDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
   | ServerConfig.ServerConfig
+  | UsageService.UsageService
   | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
   | FileSystem.FileSystem
@@ -93,6 +95,7 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsService;
       const serverConfig = yield* ServerConfig.ServerConfig;
+      const usage = yield* UsageService.UsageService;
       const instanceEnv = mergeProviderInstanceEnvironment(environment);
 
       const backend = config.backend;
@@ -171,6 +174,7 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
         // one server, not the whole provider instance.
         mcpServers: decodeMcpServers(config.mcpServers),
         homeDirectory: NodeOS.homedir(),
+        rateTable: usage.rateTable,
         // Per instance, so two instances in the same project keep separate
         // conversations rather than reading each other's history.
         transcriptDirectory: NodePath.join(

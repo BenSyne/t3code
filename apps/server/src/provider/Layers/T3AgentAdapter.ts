@@ -37,6 +37,8 @@ import * as Prompt from "effect/unstable/ai/Prompt";
 import { HttpClient } from "effect/unstable/http";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
+import { toPricingTotals } from "../../agent/events/usage.ts";
+import { priceUsage } from "../../usage/usagePricing.ts";
 import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
 import { makeRuntimeEventEmitter } from "../../agent/events/emitter.ts";
 import { setSessionStatus, type AgentSessionContext } from "../../agent/loop/AgentSession.ts";
@@ -76,6 +78,10 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
   // returns immediately, so the turn must outlive the call that started it and
   // die with the instance rather than with the request.
   const instanceScope = yield* Effect.scope;
+  // Read once per adapter. The table changes rarely and a stale entry costs a
+  // slightly wrong figure, where a per-turn lookup would cost a service call
+  // inside the hot path.
+  const rateTable = yield* options.rateTable;
   const gate = yield* makeApprovalGate;
   const transcripts = makeTranscriptStore({
     fileSystem,
@@ -348,6 +354,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         toolkit: context.toolkit,
         emitter: events,
         isInterrupted: () => context.interrupted,
+        priceStep: (usage) => priceUsage(rateTable, context.model, toPricingTotals(usage), null),
       }).pipe(Effect.provide(context.modelLayer)),
     );
 
