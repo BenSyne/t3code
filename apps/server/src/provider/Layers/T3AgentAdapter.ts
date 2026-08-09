@@ -39,12 +39,15 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
 import { makeRuntimeEventEmitter } from "../../agent/events/emitter.ts";
 import { setSessionStatus, type AgentSessionContext } from "../../agent/loop/AgentSession.ts";
+import { compactPrompt } from "../../agent/compaction/summarize.ts";
+import { contextBudget, shouldCompact } from "../../agent/compaction/tokenBudget.ts";
 import { makeAgentConcurrency } from "../../agent/loop/concurrency.ts";
 import { decidePermission } from "../../agent/permission/decide.ts";
 import { makeApprovalGate } from "../../agent/permission/Gate.ts";
 import { subjectForTool } from "../../agent/permission/profile.ts";
 import { runTurn } from "../../agent/loop/runTurn.ts";
 import { createSessionStore } from "../../agent/loop/sessionStore.ts";
+import { makeTranscriptStore } from "../../agent/state/TranscriptStore.ts";
 import { resolveLanguageModel } from "../../agent/model/resolveLanguageModel.ts";
 import { readProjectContext } from "../../agent/prompt/agentsMd.ts";
 import { buildSystemPrompt } from "../../agent/prompt/systemPrompt.ts";
@@ -67,6 +70,10 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
   // die with the instance rather than with the request.
   const instanceScope = yield* Effect.scope;
   const gate = yield* makeApprovalGate;
+  const transcripts = makeTranscriptStore({
+    fileSystem,
+    directory: options.transcriptDirectory,
+  });
   // A request event must carry the turn it belongs to, and the tool that raises
   // it is several frames below the turn that started it.
   const activeTurns = new Map<ThreadId, TurnId>();
@@ -196,6 +203,16 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         toolNames: resolved.tools.map((entry) => entry.tool.name),
       });
 
+      // Pick up where a previous server process left off, if it left anything.
+      const resumed = yield* transcripts.read(input.threadId);
+      const startingPrompt =
+        resumed.content.length > 0
+          ? Prompt.make([
+              { role: "system" as const, content: systemPrompt },
+              ...resumed.content.filter((message) => message.role !== "system"),
+            ])
+          : Prompt.make([{ role: "system" as const, content: systemPrompt }]);
+
       store.create({
         session,
         model,
@@ -207,7 +224,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         workspaceRoot,
         toolkit,
         contextWindow: options.contextWindowFor(model),
-        prompt: Prompt.make([{ role: "system", content: systemPrompt }]),
+        prompt: startingPrompt,
       });
 
       yield* events.sessionStarted(input.threadId);
@@ -236,6 +253,10 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
       context.prompt,
       Prompt.make([{ role: "user", content: [{ type: "text", text: input.text }] }]),
     );
+
+    // Compact before the request, not after: the point is to make room for the
+    // turn that is about to run.
+    yield* compactIfNeeded(context);
 
     const outcome = yield* Effect.exit(
       runTurn({
@@ -266,6 +287,9 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
     }
 
     const result = outcome.value;
+    // Only the messages this turn added, so the file grows by an append rather
+    // than being rewritten every turn.
+    yield* transcripts.append(threadId, result.prompt.content.slice(promptLengthBefore));
     context.prompt = result.prompt;
     context.usage = result.usage;
     context.turns.push({ id: turnId, items: [], promptLengthBefore });
@@ -276,6 +300,49 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
       state: result.stopReason === "interrupted" ? "interrupted" : "completed",
       stopReason: result.stopReason,
     });
+  });
+
+  /**
+   * Summarise the older half of the conversation when it no longer fits.
+   *
+   * Every outcome continues the turn. A failed summary leaves the conversation
+   * as it was and warns — the request may still succeed, and losing the user's
+   * turn over a failed optimisation would be the worse trade.
+   */
+  const compactIfNeeded = Effect.fnUntraced(function* (context: AgentSessionContext) {
+    if (
+      !shouldCompact({
+        usedTokens: context.usage.contextTokens,
+        contextWindow: context.contextWindow,
+      })
+    ) {
+      return;
+    }
+
+    const budget = contextBudget(context.contextWindow);
+    const outcome = yield* compactPrompt({
+      prompt: context.prompt,
+      preserveTokens: budget.preserve,
+    }).pipe(Effect.provide(context.modelLayer));
+
+    switch (outcome._tag) {
+      case "Compacted":
+        context.prompt = outcome.prompt;
+        yield* transcripts.replace(context.session.threadId, outcome.prompt);
+        yield* events.warning({
+          threadId: context.session.threadId,
+          message: `The conversation was getting long, so ${outcome.summarisedMessages} earlier messages were replaced with a summary.`,
+        });
+        return;
+      case "Failed":
+        yield* events.warning({
+          threadId: context.session.threadId,
+          message: `Could not summarise the conversation (${outcome.detail}). Continuing without compacting.`,
+        });
+        return;
+      case "NotNeeded":
+        return;
+    }
   });
 
   const sendTurn: T3AgentAdapterShape["sendTurn"] = Effect.fn("t3agent/sendTurn")(
@@ -386,6 +453,9 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
     rollbackThread: Effect.fn("t3agent/rollbackThread")(function* (threadId, numTurns) {
       const context = yield* store.require(threadId);
       store.rollback(context, numTurns);
+      // The file has to shrink too, or restarting resurrects the turns the user
+      // just undid.
+      yield* transcripts.replace(threadId, context.prompt);
       return store.snapshot(context, threadId);
     }),
     stopAll,
