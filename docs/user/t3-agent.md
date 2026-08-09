@@ -93,6 +93,11 @@ It can:
 Everything it starts is an ordinary thread. It appears in your sidebar, streams live, and you can
 interrupt, revert, or take it over at any point.
 
+Delegated threads run in **full access**, the same mode new threads use by default. Nobody is
+watching an unattended delegation to answer a permission prompt, so a mode that raises one would
+simply hang. If that is more rope than you want a delegate to have, turn orchestration off — or
+change the thread's runtime mode yourself once it exists.
+
 Two things it will not do. It cannot **delete** anything — threads or projects — because deletion
 is the one action with no undo behind it. And it cannot change another thread's **runtime mode**, so
 it can never widen what some other agent is allowed to do.
