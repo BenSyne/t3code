@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   asReasoningEffort,
+  nearestAcceptedEffort,
   reasoningEffortsFor,
   REASONING_EFFORT_LABELS,
   REASONING_EFFORTS,
@@ -70,5 +71,36 @@ describe("reading which efforts a model accepts", () => {
     expect(
       reasoningEffortsFor({ optionDescriptors: [{ id: "reasoningEffort", type: "boolean" }] }),
     ).toEqual([]);
+  });
+});
+
+describe("snapping an effort to what a model accepts", () => {
+  const codex = ["low", "medium", "high", "xhigh", "max"] as const;
+
+  it("keeps a level the model already accepts", () => {
+    expect(nearestAcceptedEffort("high", [...codex])).toBe("high");
+  });
+
+  it("snaps below the floor up to the floor", () => {
+    // Observed live and often: the agent asks GPT-5.6-Sol for "minimal", which
+    // starts at "low". Refusing cost a round trip to learn what the ordering
+    // already said — the caller wanted the least available.
+    expect(nearestAcceptedEffort("minimal", [...codex])).toBe("low");
+    expect(nearestAcceptedEffort("none", [...codex])).toBe("low");
+  });
+
+  it("snaps above the ceiling down to the ceiling", () => {
+    expect(nearestAcceptedEffort("max", ["low", "medium", "high"])).toBe("high");
+  });
+
+  it("breaks a tie toward the more thorough level", () => {
+    // Spending a little more than asked is a worse answer arriving late.
+    // Spending less risks the work not being done, which is the failure the
+    // caller was trying to avoid by naming an effort at all.
+    expect(nearestAcceptedEffort("medium", ["low", "high"])).toBe("high");
+  });
+
+  it("reports nothing when the model advertises no levels at all", () => {
+    expect(nearestAcceptedEffort("high", [])).toBeUndefined();
   });
 });
