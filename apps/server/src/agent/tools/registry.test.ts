@@ -18,6 +18,8 @@ const CONTEXT = {
   fileSystem: {} as AgentToolContext["fileSystem"],
   spawner: {} as AgentToolContext["spawner"],
   commandEnv: {},
+  // These tests exercise the tools, not the gate; approval has its own suite.
+  requestApproval: () => Effect.succeed({ _tag: "Allowed" as const }),
 } satisfies AgentToolContext;
 
 const echoTool = (name: string, reply: string): AgentTool =>

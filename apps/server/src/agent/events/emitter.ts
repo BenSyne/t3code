@@ -10,9 +10,11 @@
  */
 import type {
   CanonicalItemType,
+  CanonicalRequestType,
   ProviderDriverKind,
   ProviderRuntimeEvent,
   RuntimeItemId,
+  RuntimeRequestId,
   ThreadId,
   ThreadTokenUsageSnapshot,
   TurnId,
@@ -26,6 +28,8 @@ import {
   assistantMessageItemEvent,
   assistantTextDeltaEvent,
   reasoningDeltaEvent,
+  requestOpenedEvent,
+  requestResolvedEvent,
   runtimeWarningEvent,
   sessionExitedEvent,
   sessionStartedEvent,
@@ -95,6 +99,24 @@ export const makeRuntimeEventEmitter = Effect.fnUntraced(function* (
       detail?: string | undefined;
       data?: Record<string, unknown> | undefined;
     }) => Effect.flatMap(stamp, (s) => offer(toolItemEvent({ provider, ...input, stamp: s }))),
+
+    requestOpened: (input: {
+      threadId: ThreadId;
+      turnId: TurnId;
+      requestId: RuntimeRequestId;
+      requestType: CanonicalRequestType;
+      detail: string;
+      args?: Record<string, unknown> | undefined;
+    }) => Effect.flatMap(stamp, (s) => offer(requestOpenedEvent({ provider, ...input, stamp: s }))),
+
+    requestResolved: (input: {
+      threadId: ThreadId;
+      turnId: TurnId;
+      requestId: RuntimeRequestId;
+      requestType: CanonicalRequestType;
+      decision: string;
+    }) =>
+      Effect.flatMap(stamp, (s) => offer(requestResolvedEvent({ provider, ...input, stamp: s }))),
 
     tokenUsage: (input: { threadId: ThreadId; usage: ThreadTokenUsageSnapshot }) =>
       Effect.flatMap(stamp, (s) => offer(tokenUsageEvent({ provider, ...input, stamp: s }))),

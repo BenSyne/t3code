@@ -47,6 +47,8 @@ const makeWorkspace = Effect.gen(function* () {
     fileSystem,
     spawner,
     commandEnv: { PATH: process.env.PATH ?? "" },
+    // These tests exercise the tools, not the gate; approval has its own suite.
+    requestApproval: () => Effect.succeed({ _tag: "Allowed" as const }),
   } satisfies AgentToolContext;
 
   const resolved = yield* resolveTools([coreTools], context);
