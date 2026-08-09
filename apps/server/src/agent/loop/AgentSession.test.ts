@@ -5,7 +5,7 @@ import * as Stream from "effect/Stream";
 import * as LanguageModel from "effect/unstable/ai/LanguageModel";
 import type * as Response from "effect/unstable/ai/Response";
 import * as Prompt from "effect/unstable/ai/Prompt";
-import { describe, expect, it } from "vite-plus/test";
+import { it, describe, expect } from "@effect/vitest";
 
 import {
   closeSession,
@@ -58,53 +58,61 @@ function makeContext(layer: AgentSessionContext["modelLayer"]): AgentSessionCont
 }
 
 describe("runTurn", () => {
-  it("returns the assistant reply", async () => {
-    const { layer } = stubModel("Hello there");
-    const context = makeContext(layer);
+  it.effect("returns the assistant reply", () =>
+    Effect.gen(function* () {
+      const { layer } = stubModel("Hello there");
+      const context = makeContext(layer);
 
-    const result = await Effect.runPromise(runTurn(context, { text: "hi" }));
+      const result = yield* runTurn(context, { text: "hi" });
 
-    expect(result.text).toBe("Hello there");
-    expect(result.finishReason).toBe("stop");
-  });
+      expect(result.text).toBe("Hello there");
+      expect(result.finishReason).toBe("stop");
+    }),
+  );
 
-  it("carries the conversation into the next turn", async () => {
-    const { layer, seen } = stubModel("second");
-    const context = makeContext(layer);
+  it.effect("carries the conversation into the next turn", () =>
+    Effect.gen(function* () {
+      const { layer, seen } = stubModel("second");
+      const context = makeContext(layer);
 
-    await Effect.runPromise(runTurn(context, { text: "first question" }));
-    await Effect.runPromise(runTurn(context, { text: "second question" }));
+      yield* runTurn(context, { text: "first question" });
+      yield* runTurn(context, { text: "second question" });
 
-    // The second request must contain the whole exchange, or the agent has
-    // amnesia between turns.
-    const roles = seen[1]?.content.map((message) => message.role);
-    expect(roles).toEqual(["user", "assistant", "user"]);
-  });
+      // The second request must contain the whole exchange, or the agent has
+      // amnesia between turns.
+      const roles = seen[1]?.content.map((message) => message.role);
+      expect(roles).toEqual(["user", "assistant", "user"]);
+    }),
+  );
 
-  it("keeps the user message when the model fails", async () => {
-    const failing = Layer.effect(
-      LanguageModel.LanguageModel,
-      LanguageModel.make({
-        generateText: () => Effect.die(new Error("upstream is down")),
-        streamText: () => Stream.empty,
-      }),
-    );
-    const context = makeContext(failing);
+  it.effect("keeps the user message when the model fails", () =>
+    Effect.gen(function* () {
+      const failing = Layer.effect(
+        LanguageModel.LanguageModel,
+        LanguageModel.make({
+          generateText: () => Effect.die(new Error("upstream is down")),
+          streamText: () => Stream.empty,
+        }),
+      );
+      const context = makeContext(failing);
 
-    await Effect.runPromise(Effect.exit(runTurn(context, { text: "hi" })));
+      yield* Effect.exit(runTurn(context, { text: "hi" }));
 
-    // Dropping it would silently rewrite history the user watched arrive.
-    expect(context.prompt.content.map((message) => message.role)).toEqual(["user"]);
-  });
+      // Dropping it would silently rewrite history the user watched arrive.
+      expect(context.prompt.content.map((message) => message.role)).toEqual(["user"]);
+    }),
+  );
 
-  it("does not append an empty assistant message", async () => {
-    const { layer } = stubModel("");
-    const context = makeContext(layer);
+  it.effect("does not append an empty assistant message", () =>
+    Effect.gen(function* () {
+      const { layer } = stubModel("");
+      const context = makeContext(layer);
 
-    await Effect.runPromise(runTurn(context, { text: "hi" }));
+      yield* runTurn(context, { text: "hi" });
 
-    expect(context.prompt.content.map((message) => message.role)).toEqual(["user"]);
-  });
+      expect(context.prompt.content.map((message) => message.role)).toEqual(["user"]);
+    }),
+  );
 });
 
 describe("session lifecycle", () => {

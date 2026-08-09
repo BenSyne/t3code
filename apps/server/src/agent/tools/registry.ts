@@ -1,0 +1,178 @@
+/**
+ * Which tools a turn can call, and where they come from.
+ *
+ * The loop never names a tool. It asks the registry for a toolkit and runs
+ * whatever it gets back. That indirection is the whole point: MCP servers,
+ * skills, and cross-provider orchestration all arrive later as
+ * {@link ToolContributor}s, and none of them requires the loop to change.
+ *
+ * ## The one cast in this file
+ *
+ * A registry whose contents are decided at runtime cannot be a statically-keyed
+ * record — that is what "decided at runtime" means. So the tool/handler pair is
+ * erased here and re-associated by name. {@link defineTool} is the only way to
+ * build a pair, and it is fully typed, so every individual tool is checked at
+ * its definition site. The erasure is contained to {@link buildToolkit}.
+ *
+ * @module agent/tools/registry
+ */
+import * as Effect from "effect/Effect";
+import type * as FileSystem from "effect/FileSystem";
+import type * as AiError from "effect/unstable/ai/AiError";
+import type * as Schema from "effect/Schema";
+import type * as Tool from "effect/unstable/ai/Tool";
+import * as Toolkit from "effect/unstable/ai/Toolkit";
+import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+
+/**
+ * What a tool is allowed to reach.
+ *
+ * Services are resolved once, when the session is built, and handed over as
+ * plain values. Handlers therefore have no requirements of their own, which is
+ * what keeps `runTurn` runnable against a stub with no platform layer at all.
+ */
+export interface AgentToolContext {
+  /** Absolute path every file tool is confined to. */
+  readonly workspaceRoot: string;
+  readonly fileSystem: FileSystem.FileSystem;
+  readonly spawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
+  /**
+   * Environment for spawned commands. Comes from the provider instance, so a
+   * command sees the same `PATH` and credentials the rest of the instance does.
+   */
+  readonly commandEnv: Record<string, string>;
+}
+
+/** A tool paired with the handler that runs it. Build one with {@link defineTool}. */
+export interface AgentTool {
+  readonly tool: Tool.Any;
+  readonly handler: ErasedHandler;
+}
+
+type ErasedHandler = (params: never, context: never) => Effect.Effect<unknown, unknown>;
+
+/**
+ * Pair a tool with its handler, checked against that tool's own schemas.
+ *
+ * The handler may fail with the tool's declared failure type. Tools are built
+ * with `failureMode: "return"`, so such a failure is handed to the model as a
+ * result it can read and recover from, rather than ending the turn.
+ */
+export function defineTool<T extends Tool.Any>(
+  tool: T,
+  handler: (
+    params: Tool.Parameters<T>,
+    context: Toolkit.HandlerContext<T>,
+  ) => Effect.Effect<Tool.Success<T>, Tool.Failure<T> | AiError.AiError>,
+): AgentTool {
+  return { tool, handler: handler as ErasedHandler };
+}
+
+/**
+ * A source of tools.
+ *
+ * Contributors are constructed with whatever services they need already
+ * provided, so contributing has no requirements and cannot fail — a broken MCP
+ * server yields zero tools and a warning, it does not take the turn down with
+ * it.
+ */
+export interface ToolContributor {
+  /** Identifies the source in warnings, e.g. `"core"`, `"mcp:github"`. */
+  readonly name: string;
+  readonly tools: (context: AgentToolContext) => Effect.Effect<ReadonlyArray<AgentTool>>;
+}
+
+/** A tool that was dropped because something earlier claimed its name. */
+export interface DroppedTool {
+  readonly toolName: string;
+  readonly contributor: string;
+  readonly keptFrom: string;
+}
+
+export interface ResolvedTools {
+  readonly tools: ReadonlyArray<AgentTool>;
+  /**
+   * Name collisions, in the order they were hit. Surfaced as a warning rather
+   * than resolved silently: an MCP server that shadows `read_file` changes what
+   * the agent does to your disk, and you should be told.
+   */
+  readonly dropped: ReadonlyArray<DroppedTool>;
+}
+
+/**
+ * Ask every contributor for its tools, first claim on a name wins.
+ *
+ * Order is the priority order: core tools are listed first precisely so nothing
+ * discovered at runtime can take their names.
+ */
+export const resolveTools = Effect.fnUntraced(function* (
+  contributors: ReadonlyArray<ToolContributor>,
+  context: AgentToolContext,
+) {
+  const tools: Array<AgentTool> = [];
+  const dropped: Array<DroppedTool> = [];
+  const claimedBy = new Map<string, string>();
+
+  for (const contributor of contributors) {
+    const contributed = yield* contributor.tools(context);
+    for (const candidate of contributed) {
+      const name = candidate.tool.name;
+      const owner = claimedBy.get(name);
+      if (owner !== undefined) {
+        dropped.push({ toolName: name, contributor: contributor.name, keptFrom: owner });
+        continue;
+      }
+      claimedBy.set(name, contributor.name);
+      tools.push(candidate);
+    }
+  }
+
+  return { tools, dropped } satisfies ResolvedTools;
+});
+
+/**
+ * `Tool.Any` with the requirements pinned to `never`.
+ *
+ * `Tool.Any` leaves them `any`, which would spread through every caller of
+ * {@link buildToolkit} and quietly disable the checking that stops a service
+ * from going unprovided. `defineTool` already guarantees handlers need nothing,
+ * so stating that here loses no information.
+ */
+export interface SelfContainedTool extends Tool.Tool<
+  string,
+  {
+    // `Schema.Top` would leave the decoding services `unknown`, which the
+    // requirements channel picks up just as readily as `any`. Naming `never`
+    // on both sides says what is actually true of these schemas.
+    readonly parameters: SelfContainedSchema;
+    readonly success: SelfContainedSchema;
+    readonly failure: SelfContainedSchema;
+    readonly failureMode: Tool.FailureMode;
+  },
+  never
+> {}
+
+type SelfContainedSchema = Schema.Codec<any, any, never, never>;
+
+export type AgentToolkit = Toolkit.WithHandler<Record<string, SelfContainedTool>>;
+
+/**
+ * Turn resolved tools into something `streamText` accepts.
+ *
+ * The result is an `Effect` yielding a handler-bearing toolkit, which is one of
+ * the shapes the AI stack takes for its `toolkit` option.
+ */
+export function buildToolkit(tools: ReadonlyArray<AgentTool>): Effect.Effect<AgentToolkit> {
+  const toolkit = Toolkit.make(...tools.map((entry) => entry.tool));
+  const handlers: Record<string, ErasedHandler> = {};
+  for (const entry of tools) {
+    handlers[entry.tool.name] = entry.handler;
+  }
+  // See the module note: names are known only at runtime, so the record cannot
+  // be checked against the toolkit's key type. Every handler in it was type-
+  // checked against its own tool by `defineTool`.
+  return Effect.provide(
+    toolkit,
+    toolkit.toLayer(handlers as never),
+  ) as unknown as Effect.Effect<AgentToolkit>;
+}
