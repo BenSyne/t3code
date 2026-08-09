@@ -21,6 +21,7 @@ import * as ChildProcess from "effect/unstable/process/ChildProcess";
 
 import { toolFailure, ToolFailure } from "../failure.ts";
 import { defineTool, type AgentTool, type AgentToolContext } from "../registry.ts";
+import { optionalParam } from "../optionalParam.ts";
 
 /** What a shell reports for a command killed by `timeout(1)`. Familiar to models. */
 const TIMEOUT_EXIT_CODE = 124;
@@ -35,12 +36,12 @@ const BashTool = Tool.make("bash", {
     "Prefer the glob and grep tools over `find` and `grep` — they are faster and skip build output.",
   parameters: Schema.Struct({
     command: Schema.String.annotate({ description: "The shell command to run." }),
-    description: Schema.optional(
+    description: optionalParam(
       Schema.String.annotate({
         description: "Short description of what this command does, shown to the user.",
       }),
     ),
-    timeoutMs: Schema.optional(
+    timeoutMs: optionalParam(
       Schema.Number.annotate({
         description: `Timeout in milliseconds. Defaults to ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}.`,
       }),

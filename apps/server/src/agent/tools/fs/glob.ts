@@ -18,6 +18,7 @@ import { ToolFailure, toolFailure } from "../failure.ts";
 import { defineTool, type AgentTool, type AgentToolContext } from "../registry.ts";
 import { resolveExisting } from "../safePath.ts";
 import { isIgnoredPath } from "./ignore.ts";
+import { optionalParam } from "../optionalParam.ts";
 
 /** Enough to see the shape of a codebase; beyond this the model should narrow. */
 const MAX_RESULTS = 200;
@@ -30,7 +31,7 @@ const GlobTool = Tool.make("glob", {
     pattern: Schema.String.annotate({
       description: 'Glob pattern, e.g. "src/**/*.ts" or "**/*.test.ts".',
     }),
-    path: Schema.optional(
+    path: optionalParam(
       Schema.String.annotate({
         description: "Directory to search in. Defaults to the project root.",
       }),
