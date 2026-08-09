@@ -21,43 +21,67 @@ import type {
 import { DEFAULT_MODEL_BY_PROVIDER } from "@t3tools/contracts";
 
 import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
+import { KNOWN_MODELS } from "../../agent/model/ModelCatalog.ts";
 import type { ResolvedCredential } from "../../agent/model/credentials.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 
-/** Models offered before a live catalogue exists. */
-const KNOWN_MODELS: ReadonlyArray<{ slug: string; name: string }> = [
-  { slug: "claude-opus-5", name: "Claude Opus 5" },
-  { slug: "claude-sonnet-5", name: "Claude Sonnet 5" },
-  { slug: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
-];
-
+/**
+ * The model this instance uses when a thread does not name one.
+ *
+ * Falls back per backend, not to a single global default. A blank default on an
+ * OpenRouter instance previously resolved to `claude-sonnet-5`, which OpenRouter
+ * does not recognise — it wants `anthropic/claude-sonnet-5` — so the first turn
+ * failed with a model-not-found error that pointed nowhere useful.
+ */
 export function defaultModelFor(settings: T3AgentSettings): string {
   const configured = settings.defaultModel.trim();
   if (configured !== "") {
     return configured;
   }
-  return DEFAULT_MODEL_BY_PROVIDER[T3AGENT_DRIVER_KIND] ?? "claude-sonnet-5";
+  const forBackend = KNOWN_MODELS[settings.backend][0]?.id;
+  return forBackend ?? DEFAULT_MODEL_BY_PROVIDER[T3AGENT_DRIVER_KIND] ?? "claude-sonnet-5";
 }
 
+/**
+ * What the model picker offers for this instance.
+ *
+ * Keyed by the chosen backend: an OpenRouter instance must not advertise bare
+ * Anthropic slugs, because picking one sends a request that cannot succeed.
+ * The configured default is always included even when the catalogue has never
+ * heard of it — the user typed it deliberately, and a picker that hides the
+ * model the instance is actually set to is worse than one that is incomplete.
+ */
 function buildModels(settings: T3AgentSettings): ReadonlyArray<ServerProviderModel> {
   const preferred = defaultModelFor(settings);
-  const known = KNOWN_MODELS.map((model) => ({
-    slug: model.slug,
-    name: model.name,
+  const catalogue = KNOWN_MODELS[settings.backend];
+
+  const known = catalogue.map((model) => ({
+    slug: model.id,
+    name: model.label,
     isCustom: false,
-    isDefault: model.slug === preferred,
+    isDefault: model.id === preferred,
     capabilities: null,
   }));
 
-  // A custom slug the user typed wins over nothing; duplicates of a known model
-  // would render twice, so they are dropped rather than deduped silently later.
-  const knownSlugs = new Set(known.map((model) => model.slug));
-  const custom = settings.customModels
+  const seen = new Set(known.map((model) => model.slug));
+  const extra = [preferred, ...settings.customModels]
     .map((slug) => slug.trim())
-    .filter((slug) => slug !== "" && !knownSlugs.has(slug))
-    .map((slug) => ({ slug, name: slug, isCustom: true, capabilities: null }));
+    .filter((slug) => {
+      if (slug === "" || seen.has(slug)) {
+        return false;
+      }
+      seen.add(slug);
+      return true;
+    })
+    .map((slug) => ({
+      slug,
+      name: slug,
+      isCustom: true,
+      isDefault: slug === preferred,
+      capabilities: null,
+    }));
 
-  return [...known, ...custom];
+  return [...known, ...extra];
 }
 
 function buildAuth(credential: ResolvedCredential): ServerProviderAuth {

@@ -64,7 +64,14 @@ const TaskTool = Tool.make("task", {
 export interface SubagentContext {
   /** How deep the *current* agent is. Children run at one more. */
   readonly depth: number;
-  readonly systemPrompt: string;
+  /**
+   * Read when the tool runs, not when it is built.
+   *
+   * The prompt names the tools available, and the tools include this one, so
+   * taking it by value here is a cycle — and one that only shows up at runtime,
+   * as a "cannot access before initialization" on the first turn.
+   */
+  readonly systemPrompt: () => string;
   readonly contextWindow: number | null;
   /**
    * Build the child's tools at the given depth.
@@ -111,7 +118,7 @@ export function makeTaskTool(context: SubagentContext): AgentTool {
           model: "",
           contextWindow: context.contextWindow,
           prompt: Prompt.make([
-            { role: "system", content: `${context.systemPrompt}\n\n${SUBAGENT_ADDENDUM}` },
+            { role: "system", content: `${context.systemPrompt()}\n\n${SUBAGENT_ADDENDUM}` },
             { role: "user", content: [{ type: "text", text: params.prompt }] },
           ]),
           toolkit,
