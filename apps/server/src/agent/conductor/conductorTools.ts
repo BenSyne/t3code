@@ -577,6 +577,11 @@ const sendToThread = (context: ConductorContext): AgentTool =>
           text: message,
           attachments: [],
         },
+        // Required by the command schema and ignored for a thread that already
+        // exists — the decider reads the thread's own runtime and interaction
+        // modes, not these. That is the property that makes this tool safe to
+        // point at a thread the user configured: a follow-up cannot quietly
+        // change what that thread is allowed to do.
         runtimeMode: "auto" satisfies RuntimeMode,
         interactionMode: "default",
         createdAt: yield* context.nowIso,
