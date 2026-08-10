@@ -7,9 +7,15 @@
  * their sidebar. This writes each thread's conversation to a file so it can be
  * picked up again.
  *
- * NDJSON, one message per line, appended. A crash mid-write costs the last
- * line rather than the file: the reader skips a line it cannot parse and keeps
- * the rest, which is the property a rewrite-the-whole-file format does not have.
+ * NDJSON, one message per line, and the reader skips a line it cannot parse
+ * rather than giving up on the file — so a write torn by a crash costs the tail
+ * of the conversation instead of all of it.
+ *
+ * Each write replaces the file. Appending only the newest messages would be
+ * cheaper, but it means holding an index into a conversation that compaction
+ * can replace underneath you, and an index that goes stale drops a turn from
+ * the file silently and permanently. The conversation is small enough that
+ * rewriting it costs nothing next to the network round trip that produced it.
  *
  * @module agent/state/TranscriptStore
  */
@@ -20,14 +26,13 @@ import type { ThreadId } from "@t3tools/contracts";
 import * as Prompt from "effect/unstable/ai/Prompt";
 
 export interface TranscriptStore {
-  /** Append messages for a thread. Never fails: losing history is not worth losing a turn. */
-  readonly append: (
-    threadId: ThreadId,
-    messages: ReadonlyArray<Prompt.Message>,
-  ) => Effect.Effect<void>;
   /** Read a thread back, or an empty prompt if there is nothing to read. */
   readonly read: (threadId: ThreadId) => Effect.Effect<Prompt.Prompt>;
-  /** Replace a thread's file wholesale. Used after compaction and rollback. */
+  /**
+   * Write a thread's conversation, replacing whatever was there.
+   *
+   * Never fails: losing history is not worth losing a turn.
+   */
   readonly replace: (threadId: ThreadId, prompt: Prompt.Prompt) => Effect.Effect<void>;
   readonly forget: (threadId: ThreadId) => Effect.Effect<void>;
 }
@@ -43,20 +48,6 @@ export const makeTranscriptStore = (input: {
   const ensureDirectory = Effect.ignore(
     input.fileSystem.makeDirectory(input.directory, { recursive: true }),
   );
-
-  const append: TranscriptStore["append"] = (threadId, messages) =>
-    messages.length === 0
-      ? Effect.void
-      : Effect.ignore(
-          Effect.andThen(
-            ensureDirectory,
-            input.fileSystem.writeFileString(
-              fileFor(threadId),
-              `${messages.map((message) => JSON.stringify(message)).join("\n")}\n`,
-              { flag: "a" },
-            ),
-          ),
-        );
 
   const read: TranscriptStore["read"] = Effect.fnUntraced(function* (threadId: ThreadId) {
     const raw = yield* Effect.option(input.fileSystem.readFileString(fileFor(threadId)));
@@ -91,7 +82,7 @@ export const makeTranscriptStore = (input: {
   const forget: TranscriptStore["forget"] = (threadId) =>
     Effect.ignore(input.fileSystem.remove(fileFor(threadId)));
 
-  return { append, read, replace, forget };
+  return { read, replace, forget };
 };
 
 /**

@@ -454,6 +454,12 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
     activeTurns.delete(threadId);
 
     if (outcome._tag !== "Success") {
+      // The user's message is already in `context.prompt`, and the file is the
+      // only thing a later session rebuilds from. Returning without writing
+      // leaves it in memory alone, so the message survives exactly as long as
+      // this process does — and a hard interrupt, which is the most common way
+      // to land here, is precisely when someone is about to keep going.
+      yield* transcripts.replace(threadId, context.prompt);
       yield* events.turnCompleted({
         threadId,
         turnId,
@@ -467,9 +473,13 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
     }
 
     const result = outcome.value;
-    // Only the messages this turn added, so the file grows by an append rather
-    // than being rewritten every turn.
-    yield* transcripts.append(threadId, result.prompt.content.slice(promptLengthBefore));
+    // Written whole rather than appended from an offset. `compactIfNeeded`
+    // above can replace the prompt mid-turn, which invalidates any index taken
+    // before it: slicing a compacted prompt at a pre-compaction offset reads
+    // past the end and appends nothing, dropping the whole turn from the file
+    // permanently. Rewriting costs one small file write against a network
+    // round trip, which is not a trade worth losing history over.
+    yield* transcripts.replace(threadId, result.prompt);
     context.prompt = result.prompt;
     context.usage = result.usage;
     context.turns.push({ id: turnId, items: [], promptLengthBefore });
@@ -508,6 +518,12 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
     switch (outcome._tag) {
       case "Compacted":
         context.prompt = outcome.prompt;
+        // Every recorded turn boundary is an index into the prompt that was
+        // just replaced, so none of them mean anything now. Dropping them
+        // makes rollback decline to undo a compacted turn; keeping them makes
+        // it slice at an arbitrary point in the summary, which is worse than
+        // refusing.
+        context.turns.length = 0;
         yield* transcripts.replace(context.session.threadId, outcome.prompt);
         yield* events.warning({
           threadId: context.session.threadId,
