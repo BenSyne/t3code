@@ -122,16 +122,21 @@ export function ConnectAgentComposer({ instanceId, onConnect }: ConnectAgentComp
           className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
         />
 
+        {/* Says the word rather than showing an arrow. An arrow beside a text
+            field reads as "send", and sending is the one thing this cannot do
+            yet — the label is what removes the doubt. */}
         <button
           type="submit"
           disabled={!canSubmit}
-          aria-label="Connect"
-          className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-primary px-3 font-medium text-primary-foreground text-xs transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy ? (
-            <Loader2Icon className="size-3.5 animate-spin" aria-hidden />
+            <>
+              <Loader2Icon className="size-3.5 animate-spin" aria-hidden />
+              Checking
+            </>
           ) : (
-            <ArrowRightIcon className="size-3.5" aria-hidden />
+            "Connect"
           )}
         </button>
       </div>
