@@ -296,6 +296,57 @@ describe("runTurn", () => {
     }),
   );
 
+  it.effect("keeps no orphaned tool call when stopped while the tool runs", () =>
+    Effect.gen(function* () {
+      // Stop pressed mid-tool cuts the stream between the call and its result.
+      // A call without a result must not reach the remembered conversation:
+      // that history is persisted, providers reject it as malformed, and every
+      // later turn on the thread then fails. This flag flips inside the
+      // handler, which is exactly when a real stop lands.
+      let interrupted = false;
+      const stopDuringTool = defineTool(
+        Tool.make("slow", {
+          description: "test tool",
+          parameters: Schema.Struct({ value: Schema.String }),
+          success: Schema.Struct({ said: Schema.String }),
+          failure: ToolFailure,
+          failureMode: "return" as const,
+        }),
+        () =>
+          Effect.sync(() => {
+            interrupted = true;
+            return { said: "too late" };
+          }),
+      );
+
+      const { result, events } = yield* run({
+        tools: [stopDuringTool],
+        interrupted: () => interrupted,
+        script: [
+          [
+            { type: "text-delta", id: "t", delta: "Working on it." },
+            { type: "tool-call", id: "call-1", name: "slow", params: { value: "x" } },
+            usagePart(10, 5),
+          ],
+        ],
+      });
+
+      expect(result.stopReason).toBe("interrupted");
+      // The text that already streamed is kept; the dangling call is not.
+      expect(result.text).toContain("Working on it.");
+      for (const message of result.prompt.content) {
+        if (typeof message.content === "string") {
+          continue;
+        }
+        for (const part of message.content) {
+          expect(part.type).not.toBe("tool-call");
+        }
+      }
+      // And the timeline item is closed rather than left spinning.
+      expect(events.map((e) => e.kind)).toContain("tool:item.completed:failed");
+    }),
+  );
+
   it.effect("accumulates usage across steps and reports it", () =>
     Effect.gen(function* () {
       const { result, events } = yield* run({

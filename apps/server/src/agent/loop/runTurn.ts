@@ -391,8 +391,40 @@ const runStep = Effect.fnUntraced(function* (input: {
     });
   }
 
+  // A stop pressed while a tool ran cuts the stream between the call and its
+  // result — `takeWhile` drops the element that failed the test, and that
+  // element is the result. History holding a call with no result is malformed,
+  // and providers reject the *next* request over it; since the conversation is
+  // persisted, that turns one pressed button into a thread that can never
+  // accept another message. The orphaned call is removed from what the step
+  // remembers, and its timeline item is closed so it does not spin forever.
+  const resolvedCallIds = new Set(
+    parts.flatMap((part) => (part.type === "tool-result" ? [part.id] : [])),
+  );
+  const keptParts = parts.filter(
+    (part) => part.type !== "tool-call" || resolvedCallIds.has(part.id),
+  );
+  for (const [callId, call] of toolCalls) {
+    if (resolvedCallIds.has(callId)) {
+      continue;
+    }
+    toolCalls.delete(callId);
+    const described = describeToolCall({ toolName: call.name, params: call.params });
+    yield* input.emitter.toolItem({
+      threadId: input.threadId,
+      turnId: input.turnId,
+      itemId: makeRuntimeItemId.make(callId),
+      lifecycle: "item.completed",
+      status: "failed",
+      itemType: described.itemType,
+      title: described.title,
+      detail: "Stopped before it finished.",
+      data: described.data,
+    });
+  }
+
   return {
-    parts,
+    parts: keptParts,
     text: textChunks.join(""),
     toolCallCount: toolCalls.size,
     usage,

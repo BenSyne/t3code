@@ -432,7 +432,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
 
     // Compact before the request, not after: the point is to make room for the
     // turn that is about to run.
-    yield* compactIfNeeded(context);
+    const compacted = yield* compactIfNeeded(context);
 
     const outcome = yield* Effect.exit(
       runTurn({
@@ -457,8 +457,10 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
       // The user's message is already in `context.prompt`, and the file is the
       // only thing a later session rebuilds from. Returning without writing
       // leaves it in memory alone, so the message survives exactly as long as
-      // this process does — and a hard interrupt, which is the most common way
-      // to land here, is precisely when someone is about to keep going.
+      // this process does — and a provider failure is precisely when someone
+      // restarts things and tries again. (A hard interrupt never reaches this
+      // branch — it kills the fiber outright — so `interruptTurn` and
+      // `stopContext` each write the file themselves.)
       yield* transcripts.replace(threadId, context.prompt);
       yield* events.turnCompleted({
         threadId,
@@ -482,7 +484,13 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
     yield* transcripts.replace(threadId, result.prompt);
     context.prompt = result.prompt;
     context.usage = result.usage;
-    context.turns.push({ id: turnId, items: [], promptLengthBefore });
+    // No rollback point when compaction replaced the prompt this turn: the
+    // index above points into a conversation that no longer exists, and slicing
+    // the compacted prompt there would corrupt it. Declining to undo this turn
+    // is the same policy compaction already applied to every turn before it.
+    if (!compacted) {
+      context.turns.push({ id: turnId, items: [], promptLengthBefore });
+    }
 
     yield* events.turnCompleted({
       threadId,
@@ -498,6 +506,9 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
    * Every outcome continues the turn. A failed summary leaves the conversation
    * as it was and warns — the request may still succeed, and losing the user's
    * turn over a failed optimisation would be the worse trade.
+   *
+   * Returns whether the prompt was actually replaced, because the caller's
+   * pre-compaction bookkeeping is only valid when it was not.
    */
   const compactIfNeeded = Effect.fnUntraced(function* (context: AgentSessionContext) {
     if (
@@ -506,7 +517,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         contextWindow: context.contextWindow,
       })
     ) {
-      return;
+      return false;
     }
 
     const budget = contextBudget(context.contextWindow);
@@ -529,15 +540,15 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
           threadId: context.session.threadId,
           message: `The conversation was getting long, so ${outcome.summarisedMessages} earlier messages were replaced with a summary.`,
         });
-        return;
+        return true;
       case "Failed":
         yield* events.warning({
           threadId: context.session.threadId,
           message: `Could not summarise the conversation (${outcome.detail}). Continuing without compacting.`,
         });
-        return;
+        return false;
       case "NotNeeded":
-        return;
+        return false;
     }
   });
 
@@ -582,6 +593,11 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
     if (running !== null) {
       yield* Fiber.interrupt(running);
       context.running = null;
+      // The turn fiber died before its own write ran — nothing after an
+      // external interrupt runs — so the message that started the turn exists
+      // only in memory. An idle session needs no write: its last turn already
+      // did one.
+      yield* transcripts.replace(context.session.threadId, context.prompt);
     }
     if (!store.close(context, yield* nowIso)) {
       return;
@@ -638,6 +654,10 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
       // fiber alive past the interrupt, waiting on a person who has given up.
       yield* gate.rejectAll;
       yield* Fiber.interrupt(running);
+      // The killed fiber never reached its own write, so the message that
+      // started this turn is in memory alone — and a hard stop is precisely
+      // when someone is about to send a different one, or restart.
+      yield* transcripts.replace(threadId, context.prompt);
       setSessionStatus(context, "ready", yield* nowIso);
       activeTurns.delete(threadId);
       if (turnId !== undefined) {

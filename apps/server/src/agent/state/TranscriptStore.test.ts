@@ -9,21 +9,25 @@ import { makeTranscriptStore } from "./TranscriptStore.ts";
 
 const thread = "thread-1" as ThreadId;
 
-const userMessage = (text: string): Prompt.Message => ({
-  role: "user",
-  content: [{ type: "text", text }],
-});
+const userMessage = (text: string) =>
+  ({
+    role: "user",
+    content: [{ type: "text", text }],
+  }) as const;
 
+// A system message's content is a bare string; every other role carries parts.
 const texts = (prompt: Prompt.Prompt): ReadonlyArray<string> =>
   prompt.content.flatMap((message) =>
-    message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
+    typeof message.content === "string"
+      ? [message.content]
+      : message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
   );
 
-const withStore = <A>(
+const withStore = <A, E>(
   body: (
     store: ReturnType<typeof makeTranscriptStore>,
     directory: string,
-  ) => Effect.Effect<A, unknown, FileSystem.FileSystem>,
+  ) => Effect.Effect<A, E, FileSystem.FileSystem>,
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
