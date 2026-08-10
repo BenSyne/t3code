@@ -59,7 +59,10 @@ export function planDefaultAgentProvision(input: {
   const hasAgentInstance = Object.values(input.instances).some(
     (instance) => instance.driver === T3AGENT_DRIVER_KIND,
   );
-  if (hasAgentInstance) {
+  // The id as well as the driver: settings.json is a file a person can edit,
+  // and provisioning writes at a fixed id. Something else already sitting
+  // there would be overwritten rather than noticed.
+  if (hasAgentInstance || input.instances[DEFAULT_AGENT_INSTANCE_ID] !== undefined) {
     return { _tag: "AdoptExisting" };
   }
   return {

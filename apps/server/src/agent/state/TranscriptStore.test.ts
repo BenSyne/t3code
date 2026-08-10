@@ -19,11 +19,16 @@ const texts = (prompt: Prompt.Prompt): ReadonlyArray<string> =>
     message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
   );
 
-const withStore = <A>(body: (store: ReturnType<typeof makeTranscriptStore>) => Effect.Effect<A>) =>
+const withStore = <A>(
+  body: (
+    store: ReturnType<typeof makeTranscriptStore>,
+    directory: string,
+  ) => Effect.Effect<A, unknown, FileSystem.FileSystem>,
+) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-transcript-test-" });
-    return yield* body(makeTranscriptStore({ fileSystem, directory }));
+    return yield* body(makeTranscriptStore({ fileSystem, directory }), directory);
   }).pipe(Effect.provide(NodeServices.layer));
 
 describe("TranscriptStore", () => {
@@ -62,12 +67,10 @@ describe("TranscriptStore", () => {
   );
 
   it.effect("keeps the messages it can parse when a line is torn", () =>
-    withStore((store) =>
+    withStore((store, directory) =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
-        const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-torn-test-" });
-        const torn = makeTranscriptStore({ fileSystem, directory });
-        yield* torn.replace(thread, Prompt.make([userMessage("kept")]));
+        yield* store.replace(thread, Prompt.make([userMessage("kept")]));
 
         const file = `${directory}/${thread}.ndjson`;
         const whole = yield* fileSystem.readFileString(file);
@@ -75,7 +78,7 @@ describe("TranscriptStore", () => {
         // cost that message, not the conversation.
         yield* fileSystem.writeFileString(file, `${whole}{"role":"user","cont`);
 
-        assert.deepEqual(texts(yield* torn.read(thread)), ["kept"]);
+        assert.deepEqual(texts(yield* store.read(thread)), ["kept"]);
       }),
     ),
   );

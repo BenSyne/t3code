@@ -143,7 +143,7 @@ const connectOne = Effect.fnUntraced(function* (input: {
     input.spawner.spawn(
       ChildProcess.make(input.config.command, [...(input.config.args ?? [])], {
         cwd: input.workspaceRoot,
-        env: { ...input.baseEnv, ...(input.config.env ?? {}) },
+        env: { ...input.baseEnv, ...input.config.env },
         stdin: { stream: Stream.encodeText(Stream.fromQueue(outbound)) },
       }),
     ),

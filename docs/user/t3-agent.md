@@ -5,7 +5,17 @@ install — you give it an API key and it works.
 
 ## Setting it up
 
-1. Open **Settings → Providers** and add a **T3 Orchestrator** instance.
+It is already there. Open the app and the composer asks for an
+[OpenRouter key](https://openrouter.ai/keys); paste it and press **Connect**. The key is checked
+against OpenRouter before it is saved, so a typo tells you immediately rather than killing your
+first message.
+
+That is the whole setup. If you would rather use a different provider, or you already have a key in
+your environment, everything below still works.
+
+### Setting it up by hand
+
+1. Open **Settings → Providers** and select the **T3 Orchestrator** instance (or add another).
 2. Choose a **Provider**: Anthropic, OpenAI, OpenRouter, Cerebras, or OpenAI-compatible.
 3. Set the **API key variable** to the name of an environment variable — `ANTHROPIC_API_KEY`,
    `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, whatever you like.
@@ -15,7 +25,7 @@ install — you give it an API key and it works.
    everywhere it would otherwise be displayed or logged.
 5. Pick a **Default model**, or leave it blank for the provider's default.
 
-That is the whole setup. Start a thread and pick T3 Orchestrator from the model picker.
+Start a thread and pick T3 Orchestrator from the model picker.
 
 ### How hard it thinks
 

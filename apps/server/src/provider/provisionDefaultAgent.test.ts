@@ -32,6 +32,16 @@ describe("planDefaultAgentProvision", () => {
     expect(decision._tag).toBe("AdoptExisting");
   });
 
+  it("refuses to write over whatever already holds the id it provisions at", () => {
+    // Only reachable by hand-editing settings.json, but provisioning writes at a
+    // fixed id, so the alternative is silently destroying that instance.
+    const decision = planDefaultAgentProvision({
+      offered: false,
+      instances: { t3agent: { driver: "claude" } },
+    });
+    expect(decision._tag).toBe("AdoptExisting");
+  });
+
   it("never resurrects an agent the user deleted", () => {
     // Deleting it leaves no instance behind, which is the same shape as a fresh
     // machine. The offered flag is the only thing that tells them apart.
