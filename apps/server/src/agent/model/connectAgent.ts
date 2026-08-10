@@ -23,6 +23,7 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { isSafeBaseUrl, UNSAFE_BASE_URL_DETAIL } from "./baseUrl.ts";
 import { BACKEND_KINDS, type BackendKind } from "./resolveLanguageModel.ts";
 import { verifyCredential } from "./verifyCredential.ts";
 
@@ -61,6 +62,13 @@ export const connectAgent = Effect.fnUntraced(function* (input: {
   const trimmedBaseUrl = input.baseUrl?.trim();
   const baseUrl =
     trimmedBaseUrl === undefined || trimmedBaseUrl === "" ? undefined : trimmedBaseUrl;
+
+  // Refused before the key is sent anywhere, and before it is stored. This
+  // address is where every later request carries the credential too, not just
+  // the check below, so an unencrypted one off this machine leaks it for good.
+  if (baseUrl !== undefined && !isSafeBaseUrl(baseUrl)) {
+    return { _tag: "Rejected", detail: UNSAFE_BASE_URL_DETAIL } satisfies ConnectAgentResult;
+  }
 
   // Everything except a local server needs a key, and asking the provider about
   // an absent one wastes a round trip to be told what we already know.
