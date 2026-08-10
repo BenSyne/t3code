@@ -12,19 +12,21 @@
  * component state, masks it, and clears it the instant it is accepted — it
  * never touches `composerDraftStore`.
  *
+ * One provider, on purpose. The agent also runs against Anthropic, Cerebras and
+ * any OpenAI-compatible server, but every option offered here is a decision
+ * asked of someone who has not sent a message yet. Those live in Settings,
+ * which is where a person who already knows they want them will look.
+ *
  * @module components/chat/ConnectAgentComposer
  */
 import { type ProviderInstanceId } from "@t3tools/contracts";
-import { useCallback, useState, type FormEvent } from "react";
-import { ArrowRightIcon, KeyRoundIcon, Loader2Icon, ServerIcon } from "lucide-react";
+import { useCallback, useState, type KeyboardEvent } from "react";
+import { KeyRoundIcon, Loader2Icon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
 
 /** Where to send someone who does not have a key yet. */
 export const OPENROUTER_KEYS_URL = "https://openrouter.ai/keys";
-
-/** Ollama's default, which is what most people running something local have. */
-export const DEFAULT_LOCAL_URL = "http://localhost:11434/v1";
 
 export type ConnectAttempt =
   | { readonly _tag: "Ok"; readonly modelCount: number }
@@ -38,7 +40,6 @@ export interface ConnectAgentComposerProps {
     readonly instanceId: ProviderInstanceId;
     readonly backend: string;
     readonly secret?: string;
-    readonly baseUrl?: string;
   }) => Promise<ConnectAttempt>;
 }
 
@@ -55,70 +56,75 @@ export function messageForAttempt(attempt: ConnectAttempt): string | null {
 
 export function ConnectAgentComposer({ instanceId, onConnect }: ConnectAgentComposerProps) {
   const [secret, setSecret] = useState("");
-  const [localUrl, setLocalUrl] = useState(DEFAULT_LOCAL_URL);
-  const [useLocal, setUseLocal] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const value = useLocal ? localUrl : secret;
-  const canSubmit = !busy && value.trim() !== "";
+  const canSubmit = !busy && secret.trim() !== "";
 
-  const submit = useCallback(
-    async (event: FormEvent) => {
-      event.preventDefault();
-      if (!canSubmit) return;
-      setBusy(true);
-      setError(null);
-      try {
-        const attempt = await onConnect(
-          useLocal
-            ? { instanceId, backend: "openai-compat", baseUrl: localUrl.trim() }
-            : { instanceId, backend: "openrouter", secret: secret.trim() },
-        );
-        setError(messageForAttempt(attempt));
-        if (attempt._tag === "Ok") {
-          // Nothing keeps the key around after it has been handed over.
-          setSecret("");
-        }
-      } finally {
-        setBusy(false);
+  const submit = useCallback(async () => {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const attempt = await onConnect({
+        instanceId,
+        backend: "openrouter",
+        secret: secret.trim(),
+      });
+      setError(messageForAttempt(attempt));
+      if (attempt._tag === "Ok") {
+        // Nothing keeps the key around after it has been handed over.
+        setSecret("");
       }
-    },
-    [canSubmit, instanceId, localUrl, onConnect, secret, useLocal],
-  );
+    } catch (cause) {
+      // Without this the button looked broken: a rejected request was an
+      // unhandled rejection, so the press produced no error, no success and
+      // nothing in any log — the one failure mode that tells nobody anything.
+      // Whatever went wrong, say so and include the reason.
+      setError(
+        `Could not reach the server to check that key. ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [canSubmit, instanceId, onConnect, secret]);
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-2">
+    // A div, not a form. This renders inside the composer, which is itself a
+    // form, and a nested form is dropped by the browser — the submit handler
+    // never fires and the press silently submits the outer one instead. Enter
+    // is wired on the input to keep the behaviour a text field should have.
+    <div className="flex flex-col gap-2">
       <div
         className={cn(
           "flex items-center gap-2 rounded-2xl border bg-card px-3 py-2.5 transition-colors",
           error ? "border-destructive/50" : "border-border focus-within:border-ring",
         )}
       >
-        {useLocal ? (
-          <ServerIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        ) : (
-          <KeyRoundIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        )}
+        <KeyRoundIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
 
         <input
           // Masked and excluded from anything that remembers input. A key must
           // not survive in a password manager entry, a form restore, or a draft.
-          type={useLocal ? "url" : "password"}
+          type="password"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
           data-1p-ignore
           data-lpignore="true"
-          name={useLocal ? "t3-agent-local-url" : "t3-agent-key"}
-          aria-label={useLocal ? "Local server URL" : "OpenRouter API key"}
-          placeholder={useLocal ? DEFAULT_LOCAL_URL : "Paste your OpenRouter key to get started"}
-          value={value}
+          name="t3-agent-key"
+          aria-label="OpenRouter API key"
+          placeholder="Paste your OpenRouter key to get started"
+          value={secret}
           disabled={busy}
-          onChange={(event) =>
-            useLocal ? setLocalUrl(event.target.value) : setSecret(event.target.value)
-          }
+          onChange={(event) => setSecret(event.target.value)}
+          onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void submit();
+            }
+          }}
           className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
         />
 
@@ -126,7 +132,8 @@ export function ConnectAgentComposer({ instanceId, onConnect }: ConnectAgentComp
             field reads as "send", and sending is the one thing this cannot do
             yet — the label is what removes the doubt. */}
         <button
-          type="submit"
+          type="button"
+          onClick={() => void submit()}
           disabled={!canSubmit}
           className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-primary px-3 font-medium text-primary-foreground text-xs transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -148,41 +155,16 @@ export function ConnectAgentComposer({ instanceId, onConnect }: ConnectAgentComp
       )}
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-muted-foreground text-xs">
-        {useLocal ? (
-          <button
-            type="button"
-            onClick={() => {
-              setUseLocal(false);
-              setError(null);
-            }}
-            className="cursor-pointer underline underline-offset-2 hover:text-foreground"
-          >
-            Use an OpenRouter key instead
-          </button>
-        ) : (
-          <>
-            <a
-              href={OPENROUTER_KEYS_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              Get a key →
-            </a>
-            <button
-              type="button"
-              onClick={() => {
-                setUseLocal(true);
-                setError(null);
-              }}
-              className="cursor-pointer underline underline-offset-2 hover:text-foreground"
-            >
-              Use a local server
-            </button>
-          </>
-        )}
+        <a
+          href={OPENROUTER_KEYS_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2 hover:text-foreground"
+        >
+          Get a key →
+        </a>
         <span className="ms-auto">Or pick another agent below.</span>
       </div>
-    </form>
+    </div>
   );
 }
