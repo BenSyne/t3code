@@ -34,6 +34,7 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import { provisionDefaultAgent } from "./provider/provisionDefaultAgent.ts";
 import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReaper.ts";
 import { forkParked } from "./serverActivation.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
@@ -342,6 +343,21 @@ export const make = (options?: StartupOptions) =>
               environmentVariable: error.environmentVariable,
               cause: error.cause,
             }),
+          ),
+        ),
+      );
+
+      // After settings are running, because it reads and writes them; before
+      // anything materialises providers, so the agent is present the first time
+      // the picker is drawn rather than one restart later. Swallowed on
+      // failure: not having the agent pre-added is a worse first run, not a
+      // reason to refuse to boot.
+      yield* Effect.logDebug("startup phase: offering the built-in agent");
+      yield* runStartupPhase(
+        "agent.provision",
+        provisionDefaultAgent().pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("failed to offer the built-in agent", { cause }),
           ),
         ),
       );
