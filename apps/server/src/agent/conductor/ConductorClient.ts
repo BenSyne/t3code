@@ -34,17 +34,19 @@ export const ConductorClientLive = Layer.effect(ConductorClient, makeLiveOrchest
  * of a turn that dies. Tests use it to avoid standing up a database for a
  * feature they are not exercising.
  */
+export const unavailableOrchestrationClient: OrchestrationClient = {
+  dispatch: () =>
+    Effect.succeed({ accepted: false, detail: "Orchestration is not available here." }),
+  listProviders: Effect.succeed([]),
+  listModels: () => Effect.succeed([]),
+  listProjects: Effect.succeed([]),
+  listThreads: () => Effect.succeed([]),
+  getThread: () => Effect.succeed(undefined),
+  readThread: () => Effect.succeed("Orchestration is not available here."),
+  pendingInput: () => Effect.succeed([]),
+};
+
 export const ConductorClientUnavailable = Layer.succeed(
   ConductorClient,
-  ConductorClient.of({
-    dispatch: () =>
-      Effect.succeed({ accepted: false, detail: "Orchestration is not available here." }),
-    listProviders: Effect.succeed([]),
-    listModels: () => Effect.succeed([]),
-    listProjects: Effect.succeed([]),
-    listThreads: () => Effect.succeed([]),
-    getThread: () => Effect.succeed(undefined),
-    readThread: () => Effect.succeed("Orchestration is not available here."),
-    pendingInput: () => Effect.succeed([]),
-  }),
+  ConductorClient.of(unavailableOrchestrationClient),
 );

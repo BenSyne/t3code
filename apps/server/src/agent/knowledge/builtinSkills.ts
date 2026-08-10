@@ -146,11 +146,28 @@ thread, via the branch control near the composer.`,
 - \`skill\` — load a skill's full instructions on demand
 - \`task\` — hand a self-contained job to a fresh sub-agent
 
-With "Let this agent run other agents" turned on, seven more appear:
-\`list_providers\`, \`list_projects\`, \`list_threads\`, \`delegate_to_agent\`,
-\`read_delegated_thread\`, \`stop_delegated_thread\`, \`revert_delegated_thread\`.
+With "Let this agent run other agents" turned on, a set for running the other
+agents appears.
+
+Look before delegating: \`list_providers\` for which agents exist and whether each
+bills per token or draws on a subscription, \`list_models\` for what each can be
+pointed at, \`list_projects\` and \`list_threads\` for what is already in flight.
 \`list_threads\` covers every thread in a project, not only ones you started, so
 you can read what another agent is doing right now.
+
+Then run them: \`delegate_to_agent\` starts a thread on a chosen agent, model and
+reasoning effort; \`send_to_thread\` follows up in one that already exists;
+\`read_delegated_thread\` reads back what an agent actually did rather than what it
+claimed; \`answer_thread_question\` unblocks one waiting on a decision;
+\`stop_delegated_thread\` interrupts a running turn and \`revert_delegated_thread\`
+undoes its last turns and restores the files it changed.
+
+Then tidy up: \`set_thread_state\` settles, archives, snoozes or pins a thread in
+the user's inbox, \`rename_thread\` gives it an honest title, and \`create_project\`
+adds a directory as a project. \`approve_delegated_request\` appears only where the
+fleet policy allows answering a permission prompt on the user's behalf.
+
+Nothing tells you when a delegated thread finishes. Read it back to find out.
 
 Every file path is checked twice: once as text, once against where it really
 points. A symlink inside the project that resolves outside it is refused.

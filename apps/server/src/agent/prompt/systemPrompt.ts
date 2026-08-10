@@ -64,6 +64,39 @@ Length is not thoroughness. A skill you loaded is written long so it can be
 complete; that is not a model for how to reply.`;
 
 /**
+ * The tool whose presence means orchestration is switched on for this instance.
+ *
+ * Detected from the toolkit rather than passed in as a flag: the toolkit is
+ * already the authority on what this turn can do, and a second source would
+ * eventually disagree with it.
+ */
+const DELEGATION_TOOL = "delegate_to_agent";
+
+/**
+ * Said every turn rather than left to a skill, because it changes what the
+ * agent *reaches for* rather than what it knows.
+ *
+ * The tool descriptions already reach the model in full, so nothing here
+ * restates them — a list would be tokens spent on every request to repeat what
+ * every request already carries, and one more copy to go stale. What the
+ * schemas cannot say is that delegating is an ordinary move rather than a last
+ * resort, which is the whole point of this agent and is invisible from the
+ * tools alone.
+ */
+const ORCHESTRATION = `You can also run the other coding agents configured in this app, and doing so is
+ordinary rather than a last resort. Work that splits cleanly, or that suits an
+agent better than you, is worth handing over.
+
+Look before you delegate: which agents exist, whether each bills per token or
+draws on a subscription the user has already paid for, and which models it takes.
+Prefer capacity that is already paid for when the task suits it, and say what you
+are about to spend when it is not.
+
+Afterwards, read the thread back rather than trusting the summary — what an agent
+says it did and what it did are different claims. Nothing notifies you when a
+delegated thread finishes, so check.`;
+
+/**
  * Assemble the prompt.
  *
  * Order matters: the fixed instructions first, the user's project instructions
@@ -75,6 +108,10 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
   if (input.toolNames.length > 0) {
     sections.push(`Available tools: ${input.toolNames.join(", ")}.`);
+  }
+
+  if (input.toolNames.includes(DELEGATION_TOOL)) {
+    sections.push(ORCHESTRATION);
   }
 
   if (input.skillCatalog !== undefined && input.skillCatalog.trim() !== "") {
