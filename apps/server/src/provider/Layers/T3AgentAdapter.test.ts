@@ -12,7 +12,7 @@
 import * as NodeHttp from "node:http";
 import type * as NodeNet from "node:net";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ThreadId } from "@t3tools/contracts";
+import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -20,6 +20,7 @@ import * as Redacted from "effect/Redacted";
 import type * as Prompt from "effect/unstable/ai/Prompt";
 import { FetchHttpClient } from "effect/unstable/http";
 
+import { unavailableOrchestrationClient } from "../../agent/conductor/ConductorClient.ts";
 import { makeTranscriptStore } from "../../agent/state/TranscriptStore.ts";
 import type { ResolvedCredential } from "../../agent/model/credentials.ts";
 import type { T3AgentAdapterOptions } from "../Services/T3AgentAdapter.ts";
@@ -53,9 +54,17 @@ function startStubServer(input: {
 }): Promise<{
   readonly baseUrl: string;
   readonly streamCalls: () => number;
+  readonly requests: Array<{
+    stream?: boolean;
+    messages?: Array<{ role: string; content: unknown }>;
+  }>;
   readonly close: () => Promise<void>;
 }> {
   let streamed = 0;
+  const requests: Array<{
+    stream?: boolean;
+    messages?: Array<{ role: string; content: unknown }>;
+  }> = [];
   const openResponses = new Set<NodeHttp.ServerResponse>();
 
   const server = NodeHttp.createServer((request, response) => {
@@ -64,7 +73,11 @@ function startStubServer(input: {
       body += chunk.toString("utf8");
     });
     request.on("end", () => {
-      const parsed = JSON.parse(body) as { stream?: boolean };
+      const parsed = JSON.parse(body) as {
+        stream?: boolean;
+        messages?: Array<{ role: string; content: unknown }>;
+      };
+      requests.push(parsed);
       const envelope = {
         id: "chatcmpl-stub",
         object: "chat.completion.chunk",
@@ -143,6 +156,7 @@ function startStubServer(input: {
       resolve({
         baseUrl: `http://127.0.0.1:${address.port}/v1`,
         streamCalls: () => streamed,
+        requests,
         close: () =>
           new Promise<void>((done) => {
             for (const open of openResponses) {
@@ -186,12 +200,14 @@ const withAdapter = <A, E>(
     script: ReadonlyArray<StreamBehaviour>;
     summary?: string;
     contextWindow?: number;
+    conductor?: T3AgentAdapterOptions["conductor"];
   },
   body: (context: {
     adapter: Effect.Success<ReturnType<typeof makeT3AgentAdapter>>;
     transcripts: ReturnType<typeof makeTranscriptStore>;
     directory: string;
     streamCalls: () => number;
+    requests: Array<{ stream?: boolean; messages?: Array<{ role: string; content: unknown }> }>;
   }) => Effect.Effect<A, E>,
 ) =>
   Effect.gen(function* () {
@@ -219,7 +235,7 @@ const withAdapter = <A, E>(
             mcpServers: {},
             rateTable: Effect.succeed(new Map()),
             homeDirectory: directory,
-            conductor: null,
+            conductor: input.conductor ?? null,
           };
 
           const adapter = yield* makeT3AgentAdapter(options);
@@ -236,6 +252,7 @@ const withAdapter = <A, E>(
             transcripts,
             directory,
             streamCalls: stub.streamCalls,
+            requests: stub.requests,
           });
         }),
       ),
@@ -341,6 +358,70 @@ describe("T3AgentAdapter persistence", () => {
           yield* adapter.rollbackThread(THREAD, 1);
           const after = texts(yield* transcripts.read(THREAD));
           assert.deepEqual(after, compacted);
+        }),
+    ),
+  );
+
+  it.live("an orchestrating session opens already knowing its fleet", () =>
+    withAdapter(
+      {
+        script: [{ reply: "Reply one." }],
+        conductor: {
+          // The unavailable client answers every listing with nothing, so the
+          // overrides below are the entire fleet this test claims to have.
+          client: {
+            ...unavailableOrchestrationClient,
+            listProviders: Effect.succeed([
+              {
+                instanceId: ProviderInstanceId.make("codex-1"),
+                driverKind: "codex",
+                displayName: "Codex",
+                available: true,
+                defaultModel: "gpt-5-codex",
+                billing: "subscription" as const,
+              },
+            ]),
+            listProjects: Effect.succeed([
+              { id: ProjectId.make("project-1"), title: "Better T3", workspaceRoot: "/repo" },
+            ]),
+            listThreads: () =>
+              Effect.succeed([
+                {
+                  threadId: ThreadId.make("thread-blocked"),
+                  title: "Stuck migration",
+                  providerInstanceId: ProviderInstanceId.make("codex-1"),
+                  status: "ready",
+                  updatedAt: "2026-08-10T00:00:00.000Z",
+                  lifecycle: "active" as const,
+                  isRunning: false,
+                  awaitingInput: false,
+                  awaitingApproval: true,
+                },
+              ]),
+          },
+          policy: { allowSelfTargeting: false, allowApprovingRequests: false },
+          selfDriverKind: "t3agent",
+          nextId: Effect.succeed("id"),
+          nowIso: Effect.succeed("2026-08-10T00:00:00.000Z"),
+        },
+      },
+      ({ adapter, transcripts, requests }) =>
+        Effect.gen(function* () {
+          yield* adapter.sendTurn({ threadId: THREAD, input: "hi" });
+          yield* eventually(
+            Effect.map(transcripts.read(THREAD), (read) =>
+              texts(read).some((text) => text.includes("Reply one.")),
+            ),
+            "the turn to complete",
+          );
+
+          // The point of the snapshot: the very first request already tells the
+          // model who it can route to, what that costs, and what is stuck.
+          const system = requests[0]?.messages?.find((message) => message.role === "system");
+          const content = typeof system?.content === "string" ? system.content : "";
+          assert.include(content, "Codex");
+          assert.include(content, "subscription");
+          assert.include(content, '"Stuck migration" is waiting on an approval');
         }),
     ),
   );

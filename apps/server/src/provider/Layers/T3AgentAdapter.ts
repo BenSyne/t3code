@@ -63,6 +63,7 @@ import { makeTranscriptStore } from "../../agent/state/TranscriptStore.ts";
 import { asReasoningEffort, type ReasoningEffort } from "../../agent/model/reasoning.ts";
 import { resolveLanguageModel } from "../../agent/model/resolveLanguageModel.ts";
 import { readProjectContext } from "../../agent/prompt/agentsMd.ts";
+import { buildEnvironmentSnapshot } from "../../agent/prompt/environmentSnapshot.ts";
 import { buildSystemPrompt } from "../../agent/prompt/systemPrompt.ts";
 import { connectAll } from "../../agent/mcp/McpClientPool.ts";
 import { mcpContributor } from "../../agent/mcp/mcpTools.ts";
@@ -374,11 +375,21 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
       }
 
       const projectContext = yield* readProjectContext({ fileSystem, workspaceRoot });
+      // What the fleet looks like right now, so the orchestrator does not open
+      // the conversation blind. Fail-soft and bounded — see the module.
+      const environmentSnapshot =
+        options.conductor === null
+          ? undefined
+          : ((yield* buildEnvironmentSnapshot({
+              client: options.conductor.client,
+              selfDriverKind: options.conductor.selfDriverKind,
+            })) ?? undefined);
       const systemPrompt = buildSystemPrompt({
         workspaceRoot,
         projectContext: projectContext.text,
         toolNames: resolved.tools.map((entry) => entry.tool.name),
         skillCatalog: skillCatalogBlock(skills),
+        environmentSnapshot,
       });
 
       // Pick up where a previous server process left off, if it left anything.

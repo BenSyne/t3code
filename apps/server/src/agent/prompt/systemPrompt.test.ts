@@ -24,6 +24,26 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Nothing notifies you");
   });
 
+  it("opens on the state of the fleet when a snapshot is available", () => {
+    const prompt = buildSystemPrompt({
+      ...base,
+      toolNames: ["read", "delegate_to_agent"],
+      environmentSnapshot: "The fleet: Codex (subscription).",
+    });
+    expect(prompt).toContain("The fleet: Codex (subscription).");
+  });
+
+  it("carries no fleet snapshot for an instance that cannot delegate", () => {
+    // The snapshot describes abilities this instance does not have; showing it
+    // anyway would invite the model to promise orchestration it cannot do.
+    const prompt = buildSystemPrompt({
+      ...base,
+      toolNames: ["read", "bash"],
+      environmentSnapshot: "The fleet: Codex (subscription).",
+    });
+    expect(prompt).not.toContain("The fleet");
+  });
+
   it("does not restate the tool descriptions the model already receives", () => {
     const prompt = buildSystemPrompt({
       ...base,

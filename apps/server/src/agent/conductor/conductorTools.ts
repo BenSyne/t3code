@@ -60,7 +60,9 @@ const listProviders = (context: ConductorContext): AgentTool =>
         "that agent's capacity, 'per-token' means each delegation adds to a bill. " +
         "`defaultModel` is what a delegation uses when you name none; call list_models to see " +
         "the rest.",
-      parameters: Schema.Struct({}),
+      // No `parameters` on purpose: `Schema.Struct({})` serializes to a JSON
+      // schema the strict OpenAI dialect rejects, killing every turn on the
+      // backends that enforce it. The library's own no-argument default works.
       success: Schema.Struct({
         providers: Schema.Array(
           Schema.Struct({
@@ -148,7 +150,7 @@ const listProjects = (context: ConductorContext): AgentTool =>
   defineTool(
     Tool.make("list_projects", {
       description: "List the projects in T3 Code, so you can start a thread in one.",
-      parameters: Schema.Struct({}),
+      // No `parameters` — see list_providers.
       success: Schema.Struct({
         projects: Schema.Array(
           Schema.Struct({
@@ -635,18 +637,21 @@ const answerQuestion = (context: ConductorContext): AgentTool =>
       parameters: Schema.Struct({
         threadId: Schema.String,
         requestId: Schema.String.annotate({ description: "From read_delegated_thread." }),
-        answers: Schema.Record(
-          Schema.String,
-          // A union because the two kinds of question take different shapes:
-          // a single-choice answer is one label, a multi-select is the list.
-          // Typed as string-only, every multi-select question would have been
-          // unanswerable.
-          Schema.Union([Schema.String, Schema.Array(Schema.String)]),
-        ).annotate({
-          description:
-            "Question id to the chosen option label. Use a list of labels for a question marked " +
-            "'choose one or more', a single label otherwise.",
-        }),
+        // A list of pairs rather than the record the wire format uses: OpenAI's
+        // strict tool mode rejects both dynamic keys and union-typed values, so
+        // the natural `Record<questionId, label | labels>` shape made every
+        // request fail before it was sent — on exactly the backends (OpenAI,
+        // Ollama, LM Studio) that enforce strictness. The handler converts.
+        answers: Schema.Array(
+          Schema.Struct({
+            questionId: Schema.String,
+            labels: Schema.Array(Schema.String).annotate({
+              description:
+                "The chosen option labels, verbatim. One entry for an ordinary question; " +
+                "several only for one marked 'choose one or more'.",
+            }),
+          }),
+        ).annotate({ description: "One entry per open question." }),
       }),
       success: Schema.Struct({ answered: Schema.Boolean }),
       failure: ToolFailure,
@@ -665,8 +670,9 @@ const answerQuestion = (context: ConductorContext): AgentTool =>
       }
       // Checked here so a wrong shape is a sentence the model can act on
       // rather than a rejection from a provider that only says "invalid".
+      const answered = new Map(params.answers.map((entry) => [entry.questionId, entry.labels]));
       const missing = request.questions
-        .filter((question) => params.answers[question.id] === undefined)
+        .filter((question) => (answered.get(question.id) ?? []).length === 0)
         .map((question) => question.id);
       if (missing.length > 0) {
         return yield* toolFailure(
@@ -677,15 +683,14 @@ const answerQuestion = (context: ConductorContext): AgentTool =>
       // on. A near-miss — right idea, reworded — is rejected downstream with a
       // message that does not say which value was wrong.
       for (const question of request.questions) {
-        const given = params.answers[question.id];
-        const chosen = Array.isArray(given) ? given : [given];
+        const chosen = answered.get(question.id) ?? [];
         if (!question.multiSelect && chosen.length > 1) {
           return yield* toolFailure(`"${question.id}" takes a single answer, not several.`);
         }
         if (question.options.length === 0) {
           continue;
         }
-        const unknown = chosen.filter((label) => !question.options.includes(label as string));
+        const unknown = chosen.filter((label) => !question.options.includes(label));
         if (unknown.length > 0) {
           return yield* toolFailure(
             `"${unknown.join('", "')}" is not an option for "${question.id}". Use one of: ${question.options.join(", ")}.`,
@@ -693,12 +698,25 @@ const answerQuestion = (context: ConductorContext): AgentTool =>
         }
       }
 
+      // Back to the wire shape: one label for an ordinary question, the list
+      // for a multi-select. Entries for question ids the request never asked
+      // are dropped rather than forwarded.
+      const wireAnswers: Record<string, string | ReadonlyArray<string>> = {};
+      for (const question of request.questions) {
+        const chosen = answered.get(question.id) ?? [];
+        const [first] = chosen;
+        if (first === undefined) {
+          continue;
+        }
+        wireAnswers[question.id] = question.multiSelect ? chosen : first;
+      }
+
       const result = yield* context.client.dispatch({
         type: "thread.user-input.respond",
         commandId: CommandId.make(yield* context.nextId),
         threadId,
         requestId: ApprovalRequestId.make(params.requestId),
-        answers: params.answers,
+        answers: wireAnswers,
         createdAt: yield* context.nowIso,
       });
       if (!result.accepted) {

@@ -21,6 +21,11 @@ export interface SystemPromptInput {
   readonly toolNames: ReadonlyArray<string>;
   /** One line per available skill. Empty when the project has none. */
   readonly skillCatalog?: string | undefined;
+  /**
+   * The fleet at session start — agents, billing, blocked threads. Rendered
+   * only when orchestration is on; see `agent/prompt/environmentSnapshot`.
+   */
+  readonly environmentSnapshot?: string | undefined;
 }
 
 const BASE = `You are T3 Orchestrator, the agent built into T3 Code, working in a real repository on the user's machine.
@@ -79,22 +84,32 @@ const DELEGATION_TOOL = "delegate_to_agent";
  * The tool descriptions already reach the model in full, so nothing here
  * restates them — a list would be tokens spent on every request to repeat what
  * every request already carries, and one more copy to go stale. What the
- * schemas cannot say is that delegating is an ordinary move rather than a last
- * resort, which is the whole point of this agent and is invisible from the
- * tools alone.
+ * schemas cannot say is the doctrine: that delegating is ordinary, which work
+ * goes to which kind of capacity, and that a launched thread is a
+ * responsibility rather than a result. That is invisible from the tools alone,
+ * and it is the difference between an orchestrator and a chatbot with a
+ * delegation button.
  */
 const ORCHESTRATION = `You can also run the other coding agents configured in this app, and doing so is
-ordinary rather than a last resort. Work that splits cleanly, or that suits an
-agent better than you, is worth handing over.
+ordinary rather than a last resort. You are the orchestrator: routing work well
+across the fleet is worth more to the user than doing everything yourself.
 
-Look before you delegate: which agents exist, whether each bills per token or
-draws on a subscription the user has already paid for, and which models it takes.
-Prefer capacity that is already paid for when the task suits it, and say what you
-are about to spend when it is not.
+Route deliberately:
+- Match the task to the capacity. Judgment-heavy work — design, review, hard
+  debugging — goes to the strongest model on offer. Mechanical or wide work —
+  renames, sweeps, boilerplate, broad searches — goes to fast cheap capacity,
+  split in parallel when the pieces are independent.
+- Prefer capacity the user has already paid for (a subscription) when it suits
+  the task. When spending a metered key, say what you are about to spend first.
+- An agent that is busy or unavailable is a reason to route elsewhere, not a
+  reason to wait.
 
-Afterwards, read the thread back rather than trusting the summary — what an agent
-says it did and what it did are different claims. Nothing notifies you when a
-delegated thread finishes, so check.`;
+Run the fleet rather than merely launching it:
+- A delegated thread that stops to ask a question or wait on an approval stays
+  stuck until someone acts. Unblocking it is your job before it is the user's.
+- Afterwards, read the thread back rather than trusting the summary — what an
+  agent says it did and what it did are different claims. Nothing notifies you
+  when a delegated thread finishes, so check.`;
 
 /**
  * Assemble the prompt.
@@ -112,6 +127,9 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
   if (input.toolNames.includes(DELEGATION_TOOL)) {
     sections.push(ORCHESTRATION);
+    if (input.environmentSnapshot !== undefined && input.environmentSnapshot.trim() !== "") {
+      sections.push(input.environmentSnapshot);
+    }
   }
 
   if (input.skillCatalog !== undefined && input.skillCatalog.trim() !== "") {
