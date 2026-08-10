@@ -737,6 +737,12 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
+    connectAgent: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:connect-agent",
+      tag: WS_METHODS.serverConnectAgent,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
     updateServer,
     upsertKeybinding: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:upsert-keybinding",
