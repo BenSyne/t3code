@@ -25,6 +25,35 @@ const snapshot = (overrides: Record<string, unknown> = {}) =>
     checkedAt: "2026-08-09T10:00:00.000Z",
   });
 
+describe("the live catalogue", () => {
+  it("replaces the static list when a fetch has succeeded", () => {
+    const models = buildT3AgentSnapshot({
+      // The configured default stays pickable even when absent from the live
+      // list, so it is pinned to a live slug here to observe pure replacement.
+      settings: settings({ backend: "openrouter", defaultModel: "openai/gpt-5.6-luna" }),
+      credential: resolved,
+      checkedAt: "2026-08-10T00:00:00.000Z",
+      liveModels: [
+        {
+          id: "openai/gpt-5.6-luna",
+          label: "GPT-5.6 Luna",
+          vendor: "OpenAI",
+          contextWindow: 1_050_000,
+        },
+      ],
+    }).models;
+
+    expect(models.some((model) => model.slug === "openai/gpt-5.6-luna")).toBe(true);
+    // The static list must not bleed through alongside the live one.
+    expect(models.some((model) => model.slug === "anthropic/claude-opus-5")).toBe(false);
+  });
+
+  it("falls back to the static list when no live catalogue is available", () => {
+    const models = snapshot({ backend: "openrouter" }).models;
+    expect(models.some((model) => model.slug === "anthropic/claude-opus-5")).toBe(true);
+  });
+});
+
 describe("naming who powers each model", () => {
   const openrouter = () => snapshot({ backend: "openrouter" }).models;
   const find = (slug: string) => openrouter().find((model) => model.slug === slug);

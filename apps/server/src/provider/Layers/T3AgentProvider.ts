@@ -108,9 +108,12 @@ function vendorWorthShowing(model: CatalogModel): string | undefined {
   return label === vendor || label.startsWith(`${vendor} `) ? undefined : model.vendor;
 }
 
-function buildModels(settings: T3AgentSettings): ReadonlyArray<ServerProviderModel> {
+function buildModels(
+  settings: T3AgentSettings,
+  liveModels: ReadonlyArray<CatalogModel> | undefined,
+): ReadonlyArray<ServerProviderModel> {
   const preferred = defaultModelFor(settings);
-  const catalogue = KNOWN_MODELS[settings.backend];
+  const catalogue = liveModels ?? KNOWN_MODELS[settings.backend];
 
   const known = catalogue.map((model) => {
     // Rendered under the model as "<instance> · <vendor>". The same field
@@ -167,6 +170,12 @@ export function buildT3AgentSnapshot(input: {
   readonly settings: T3AgentSettings;
   readonly credential: ResolvedCredential;
   readonly checkedAt: string;
+  /**
+   * The live catalogue for this backend, when a fetch has succeeded. Absent —
+   * first seconds after connect, fetch failed, backend has no live source —
+   * the static list stands in, so the picker never opens empty.
+   */
+  readonly liveModels?: ReadonlyArray<CatalogModel> | undefined;
 }): ServerProviderDraft {
   const authenticated = input.credential._tag === "Resolved";
   const status: ServerProviderState = !input.settings.enabled
@@ -189,7 +198,7 @@ export function buildT3AgentSnapshot(input: {
       : {
           message: `Set ${input.credential.variableName} on this instance to start using the built-in agent.`,
         }),
-    models: buildModels(input.settings),
+    models: buildModels(input.settings, input.liveModels),
     slashCommands: [],
     skills: [],
   };

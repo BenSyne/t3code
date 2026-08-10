@@ -55,7 +55,8 @@ const OPENAI_EFFORTS: ReadonlyArray<ReasoningEffort> = [
   "high",
   "xhigh",
 ];
-const OPENROUTER_EFFORTS: ReadonlyArray<ReasoningEffort> = ["none", "low", "medium", "high"];
+/** Exported for the live OpenRouter catalogue, which labels models the same way. */
+export const OPENROUTER_EFFORTS: ReadonlyArray<ReasoningEffort> = ["none", "low", "medium", "high"];
 
 /**
  * Known models per backend, best-first.

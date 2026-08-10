@@ -35,6 +35,7 @@ import { McpServerConfig, type McpServers } from "../../agent/mcp/serverConfig.t
 import { safeBaseUrlOrUndefined } from "../../agent/model/baseUrl.ts";
 import { resolveCredential } from "../../agent/model/credentials.ts";
 import { contextWindowFor } from "../../agent/model/ModelCatalog.ts";
+import { makeOpenRouterCatalog } from "../../agent/model/openRouterCatalog.ts";
 import { resolveLanguageModel } from "../../agent/model/resolveLanguageModel.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
@@ -119,6 +120,10 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
       // which falls back to the default instead of failing the provider.
       const baseUrl = safeBaseUrlOrUndefined(config.baseUrl);
       const crypto = yield* Crypto.Crypto;
+      // Only OpenRouter has a public catalogue worth fetching; every other
+      // backend keeps the static list. Null rather than an empty catalogue so
+      // the fallback is decided in one place.
+      const liveCatalog = backend === "openrouter" ? yield* makeOpenRouterCatalog() : null;
       // Read on demand rather than captured: a key added after the instance was
       // materialised should work without restarting the server.
       const credential = () =>
@@ -146,6 +151,10 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
 
       const buildSnapshot = Effect.gen(function* () {
         const checkedAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
+        // Refreshed on the snapshot cadence — the same rhythm that re-checks
+        // the credential — so a new frontier model appears without a restart.
+        const liveModels =
+          liveCatalog === null ? undefined : ((yield* liveCatalog.current) ?? undefined);
         return stampIdentity(
           buildT3AgentSnapshot({
             settings: { ...config, enabled },
@@ -153,6 +162,7 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
             // authenticated without a restart.
             credential: credential(),
             checkedAt,
+            liveModels,
           }),
         );
       });
@@ -202,7 +212,10 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
         backend,
         defaultModel: defaultModelFor(config),
         commandEnv: instanceEnv as Record<string, string>,
-        contextWindowFor: (model) => contextWindowFor(backend, model),
+        // The live catalogue knows windows for models the static list has
+        // never heard of; the static list still answers for the rest.
+        contextWindowFor: (model) =>
+          liveCatalog?.contextWindowOf(model) ?? contextWindowFor(backend, model),
         permissionRules: [],
         // Decoded leniently: an MCP entry the user typed wrong should cost that
         // one server, not the whole provider instance.
