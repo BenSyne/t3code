@@ -71,7 +71,21 @@ export interface ProviderInstanceEntry {
  * `ready` probe status can remain in the streamed snapshot until reconciliation.
  */
 export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {
-  return entry.enabled && entry.isAvailable && entry.status === "ready";
+  if (!entry.enabled || !entry.isAvailable) {
+    return false;
+  }
+  // The built-in agent with no key yet is the one "not ready" a user can fix
+  // from here: selecting it is what shows the box that asks for the key. Greying
+  // it out makes switching away from it a one-way door — you cannot get back to
+  // the only screen that would let you finish setting it up.
+  //
+  // Deliberately narrow. Every other not-ready provider needs something done
+  // elsewhere (a CLI login, an install), so offering it here would only promise
+  // something the picker cannot deliver.
+  if (entry.snapshot.driver === "t3agent" && entry.snapshot.auth.status === "unauthenticated") {
+    return true;
+  }
+  return entry.status === "ready";
 }
 
 /** Picker rails contain configured, enabled instances only. */

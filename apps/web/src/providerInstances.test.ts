@@ -19,6 +19,7 @@ function provider(input: {
   displayName?: string;
   status?: ServerProvider["status"];
   models?: ServerProvider["models"];
+  auth?: ServerProvider["auth"];
 }): ServerProvider {
   return {
     instanceId: ProviderInstanceId.make(input.instanceId),
@@ -29,7 +30,7 @@ function provider(input: {
     version: null,
     status: input.status ?? "ready",
     ...(input.availability ? { availability: input.availability } : {}),
-    auth: { status: "authenticated" },
+    auth: input.auth ?? { status: "authenticated" },
     checkedAt: "2026-01-01T00:00:00.000Z",
     models: input.models ?? [],
     slashCommands: [],
@@ -65,6 +66,52 @@ describe("isProviderInstancePickerReady", () => {
     ]);
 
     expect(entry && isProviderInstancePickerReady(entry)).toBe(true);
+  });
+
+  it("keeps a keyless built-in agent selectable", () => {
+    // It reports warning rather than ready until a key arrives, and greying it
+    // out made switching away a one-way door: the only screen that can finish
+    // the setup is the one you reach by selecting it.
+    const [entry] = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("t3agent"),
+        instanceId: "t3agent",
+        status: "warning",
+        auth: { status: "unauthenticated" },
+      }),
+    ]);
+
+    expect(entry?.status).not.toBe("ready");
+    expect(entry && isProviderInstancePickerReady(entry)).toBe(true);
+  });
+
+  it("still rejects an unauthenticated CLI provider", () => {
+    // Narrow on purpose. Claude needs a CLI login, so offering it in the picker
+    // would promise something the picker cannot deliver.
+    const [entry] = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("claude"),
+        instanceId: "claude",
+        status: "error",
+        auth: { status: "unauthenticated" },
+      }),
+    ]);
+
+    expect(entry && isProviderInstancePickerReady(entry)).toBe(false);
+  });
+
+  it("still rejects a disabled built-in agent", () => {
+    const [entry] = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("t3agent"),
+        instanceId: "t3agent",
+        enabled: false,
+        status: "warning",
+        auth: { status: "unauthenticated" },
+      }),
+    ]);
+
+    expect(entry && isProviderInstancePickerReady(entry)).toBe(false);
   });
 });
 
