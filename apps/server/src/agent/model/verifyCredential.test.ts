@@ -23,6 +23,15 @@ describe("probeFor", () => {
     }
   });
 
+  it("never probes OpenRouter's public catalogue", () => {
+    // Found by connecting a junk key and watching it be accepted. OpenRouter
+    // answers /models with 200 and no credential at all, so probing it verifies
+    // nothing and stores whatever was typed. /key requires the credential.
+    const probe = probeFor({ backend: "openrouter", credential: KEY });
+    expect(probe.url).not.toContain("/models");
+    expect(probe.url).toBe("https://openrouter.ai/api/v1/key");
+  });
+
   it("defaults a local server to Ollama's address and sends no auth header", () => {
     // A local server authenticates nothing. An empty bearer would be worse than
     // no header at all — some servers reject it.

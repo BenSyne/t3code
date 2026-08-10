@@ -63,7 +63,11 @@ export function probeFor(input: {
     case "openai":
       return { url: "https://api.openai.com/v1/models", headers: bearer };
     case "openrouter":
-      return { url: "https://openrouter.ai/api/v1/models", headers: bearer };
+      // NOT /models. OpenRouter serves its catalogue publicly — it answers 200
+      // with no credential at all — so probing it accepts any string as a key
+      // and the user only finds out on their first turn, which is the exact
+      // failure this check exists to prevent. /key requires the credential.
+      return { url: "https://openrouter.ai/api/v1/key", headers: bearer };
     case "cerebras":
       return { url: `${CEREBRAS_BASE_URL}/models`, headers: bearer };
     case "openai-compat": {
