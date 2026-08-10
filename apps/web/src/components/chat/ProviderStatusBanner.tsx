@@ -4,11 +4,23 @@ import { InfoIcon, XIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { formatProviderDriverKindLabel } from "../../providerModels";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { shouldAskForKey } from "./connectAgentGate";
 
 export function getProviderStatusBannerKey(status: ServerProvider | null): string | null {
-  return !status || status.status === "ready" || status.status === "disabled"
-    ? null
-    : [status.instanceId, status.status, status.auth.status, status.message ?? ""].join("\u0000");
+  if (!status || status.status === "ready" || status.status === "disabled") {
+    return null;
+  }
+  // The composer is already asking for the key, in the place the user is
+  // looking. A second copy of the same request above it is noise — and this
+  // banner's wording is the worse of the two: it names the environment variable
+  // and tells the user to sign in via a CLI, neither of which applies to an
+  // agent that has no CLI.
+  if (shouldAskForKey(status)) {
+    return null;
+  }
+  return [status.instanceId, status.status, status.auth.status, status.message ?? ""].join(
+    "\u0000",
+  );
 }
 
 export function shouldShowProviderStatusBanner(
@@ -27,6 +39,11 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   status: ServerProvider | null;
 }) {
   if (!status || status.status === "ready" || status.status === "disabled") {
+    return null;
+  }
+  // Same reason as in getProviderStatusBannerKey: the composer owns this ask.
+  // Guarded here too so the banner cannot appear by being rendered directly.
+  if (shouldAskForKey(status)) {
     return null;
   }
 
