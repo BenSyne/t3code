@@ -32,6 +32,7 @@ import { ConductorClient } from "../../agent/conductor/ConductorClient.ts";
 import type { ConductorContext } from "../../agent/conductor/conductorTools.ts";
 import { DEFAULT_FLEET_POLICY } from "../../agent/conductor/fleet.ts";
 import { McpServerConfig, type McpServers } from "../../agent/mcp/serverConfig.ts";
+import { safeBaseUrlOrUndefined } from "../../agent/model/baseUrl.ts";
 import { resolveCredential } from "../../agent/model/credentials.ts";
 import { contextWindowFor } from "../../agent/model/ModelCatalog.ts";
 import { resolveLanguageModel } from "../../agent/model/resolveLanguageModel.ts";
@@ -112,7 +113,11 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
       const instanceEnv = mergeProviderInstanceEnvironment(environment);
 
       const backend = config.backend;
-      const baseUrl = config.baseUrl.trim() === "" ? undefined : config.baseUrl.trim();
+      // Re-checked on the way out of settings, not just on the way in: this is
+      // a JSON file a person can edit, and every request the agent makes sends
+      // the key to this address. An unsafe one is dropped rather than honoured,
+      // which falls back to the default instead of failing the provider.
+      const baseUrl = safeBaseUrlOrUndefined(config.baseUrl);
       const crypto = yield* Crypto.Crypto;
       // Read on demand rather than captured: a key added after the instance was
       // materialised should work without restarting the server.
