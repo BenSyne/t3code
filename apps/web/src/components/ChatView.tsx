@@ -265,7 +265,7 @@ import {
   shouldShowProviderStatusBanner,
 } from "./chat/ProviderStatusBanner";
 import { ConnectAgentComposer, type ConnectAttempt } from "./chat/ConnectAgentComposer";
-import { preferredFirstRunProvider, shouldAskForKey } from "./chat/connectAgentGate";
+import { shouldAskForKey } from "./chat/connectAgentGate";
 import { ThreadErrorBanner } from "./chat/ThreadErrorBanner";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
@@ -2603,18 +2603,10 @@ function ChatViewContent(props: ChatViewProps) {
       );
     }
     const defaultInstanceId = defaultInstanceIdForDriver(selectedProvider);
-    const byDriver = providerStatuses.find((status) => status.instanceId === defaultInstanceId);
-    if (byDriver !== undefined) {
-      return byDriver;
-    }
-    // Nothing resolved, which on a fresh install means nothing is set up yet.
-    // Land on the built-in agent so the composer can ask for a key — but only
-    // when there is no other usable provider, because greeting someone who
-    // already signed into Claude with a key prompt is worse than today.
-    return preferredFirstRunProvider(providerStatuses);
+    return providerStatuses.find((status) => status.instanceId === defaultInstanceId) ?? null;
   }, [activeProviderInstanceId, providerStatuses, selectedProvider]);
-  // The built-in agent ships with the server and is provisioned without a key,
-  // so the composer asks for one rather than sending the user to Settings.
+  // The built-in agent is provisioned without a key, so once it is selected the
+  // composer asks for one rather than sending the user to Settings.
   const askForAgentKey = shouldAskForKey(activeProviderStatus);
   const agentInstanceId = askForAgentKey ? (activeProviderStatus?.instanceId ?? null) : null;
   const connectAgentCommand = useAtomCommand(serverEnvironment.connectAgent, {

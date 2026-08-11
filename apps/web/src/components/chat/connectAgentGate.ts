@@ -27,28 +27,3 @@ export function shouldAskForKey(provider: ServerProvider | null | undefined): bo
   }
   return provider.auth.status === "unauthenticated";
 }
-
-/**
- * Which provider a fresh install should land on.
- *
- * The built-in agent, but only when nothing else is configured. Someone who
- * already signed into Claude Code should never open the app to a key prompt —
- * the agent waits in the picker instead, which is where they would look for it.
- *
- * Returns null to mean "leave the existing default alone".
- */
-export function preferredFirstRunProvider(
-  providers: ReadonlyArray<ServerProvider>,
-): ServerProvider | null {
-  const agent = providers.find((provider) => provider.driver === AGENT_DRIVER);
-  if (agent === undefined) {
-    return null;
-  }
-  const hasAnotherUsableProvider = providers.some(
-    (provider) =>
-      provider.driver !== AGENT_DRIVER &&
-      provider.status !== "disabled" &&
-      provider.auth.status !== "unauthenticated",
-  );
-  return hasAnotherUsableProvider ? null : agent;
-}

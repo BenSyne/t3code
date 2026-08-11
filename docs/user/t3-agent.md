@@ -5,7 +5,7 @@ install — you give it an API key and it works.
 
 ## Setting it up
 
-It is already there. Open the app and the composer asks for an
+It is already in the model picker. Pick **T3 Orchestrator** and the composer asks for an
 [OpenRouter key](https://openrouter.ai/keys); paste it and press **Connect**. The key is checked
 against OpenRouter before it is saved, so a typo tells you immediately rather than killing your
 first message.
