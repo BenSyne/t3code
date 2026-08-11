@@ -1,16 +1,12 @@
 /**
  * The shared vocabulary for how hard a model should think.
  *
- * One scale across all four backends, so the picker means the same thing
- * whichever instance a thread runs on. The scale is OpenRouter's, chosen
- * because it is the widest — every other backend accepts a subset of it, and
- * translating a subset is honest in a way that stretching a narrow scale to a
- * wide one is not. It is also, not by coincidence, the vocabulary T3 Code
- * already uses for Codex, so the labels match what users see elsewhere.
+ * OpenRouter's scale, because it is the widest — every other backend accepts a
+ * subset, and translating a subset down is honest where stretching a narrow
+ * scale up is not. It is also what T3 Code already shows for Codex.
  *
- * What each level *does* is the backend's business: the translation to wire
- * shapes lives in `resolveLanguageModel`, and which levels a given model
- * supports lives in `ModelCatalog`. This module only says what the words are.
+ * Translation to wire shapes lives in `resolveLanguageModel`; which levels a
+ * model supports lives in `ModelCatalog`. This only names the words.
  *
  * @module agent/model/reasoning
  */
@@ -42,21 +38,17 @@ export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
 /**
  * The picker choice meaning "send nothing, let the provider decide".
  *
- * A visible option rather than an absent selection, because the backends
- * disagree about what silence means — Anthropic does not think unless asked,
- * OpenAI's reasoning models think anyway — and a labelled "Default" is honest
- * about being a delegation where a silent one would look like "off".
+ * Visible rather than absent because backends disagree about what silence
+ * means: Anthropic does not think unless asked, OpenAI's reasoning models think
+ * anyway. A silent default would read as "off".
  */
 export const REASONING_DEFAULT_CHOICE = "default";
 
 /**
  * Narrow a stored selection to an effort, or undefined for anything else.
  *
- * Undefined covers three cases that all mean "send nothing": no selection was
- * made, the user chose Default, or the stored value is something this build
- * has never heard of. Treating the unknown value as absent rather than an
- * error matters because selections outlive builds — a thread configured under
- * a future version must not fail to run under this one.
+ * An unrecognised value is absent rather than an error: selections outlive
+ * builds, and a thread configured under a future version must still run here.
  */
 export function asReasoningEffort(value: string | undefined): ReasoningEffort | undefined {
   if (value === undefined || value === REASONING_DEFAULT_CHOICE) {
@@ -73,15 +65,10 @@ export const REASONING_EFFORT_OPTION_ID = "reasoningEffort";
 /**
  * Which efforts a specific model will accept.
  *
- * Read from the model's own option descriptors — the same list the picker
- * renders — rather than assumed from the provider, because a lineup routinely
- * mixes models that take the full range with models that take none. An empty
- * result means the model exposes no reasoning control at all, which is
- * different from "we do not know" and should be reported as such: sending an
- * effort to one of those does nothing, quietly.
- *
- * The "default" choice is filtered out. It is a picker affordance meaning
- * "send nothing", not a level anyone can ask for.
+ * Read from the model's own descriptors rather than assumed from the provider,
+ * because a lineup mixes models taking the full range with models taking none.
+ * Empty means no reasoning control, so sending an effort does nothing quietly.
+ * The "default" choice is filtered out — it is a picker affordance, not a level.
  */
 export function reasoningEffortsFor(
   capabilities: { readonly optionDescriptors?: ReadonlyArray<unknown> | undefined } | null,
@@ -106,14 +93,10 @@ export function reasoningEffortsFor(
 /**
  * The closest level a model will actually accept.
  *
- * The scale is ordered, so a request the target does not offer still says which
- * direction was wanted: "minimal" on a lineup starting at "low" means the least
- * available, not nothing. Refusing outright — which is what this replaces —
- * costs a whole round trip to learn something the ordering already implies.
- *
- * Ties go to the more thorough level. Spending slightly more than asked is a
- * worse answer arriving; spending less risks the task not being done properly,
- * which is what the caller was trying to avoid by naming an effort at all.
+ * The scale is ordered, so an unavailable request still says which direction
+ * was wanted: "minimal" on a lineup starting at "low" means the least
+ * available. Ties go to the more thorough level — spending slightly more than
+ * asked beats risking the task not being done properly.
  */
 export function nearestAcceptedEffort(
   requested: ReasoningEffort,

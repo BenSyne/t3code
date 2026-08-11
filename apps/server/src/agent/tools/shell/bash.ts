@@ -1,13 +1,6 @@
 /**
  * Run a shell command in the project.
  *
- * The most powerful tool and the most dangerous one, so the shape of it matters
- * more than the code: it always runs in the workspace directory, it always has
- * a timeout, and its output is always bounded. What it is *allowed* to run is
- * not decided here — that belongs to the approval gate, which can see the whole
- * command and the user's rules. This file's job is to run one command well and
- * report honestly what happened.
- *
  * @module agent/tools/shell/bash
  */
 import * as Duration from "effect/Duration";
@@ -143,12 +136,7 @@ function clampTimeout(requested: number | undefined): number {
   return Math.min(Math.floor(requested), MAX_TIMEOUT_MS);
 }
 
-/**
- * Read a stream, stopping at the byte cap.
- *
- * Keeps the head rather than the tail. A failing command's first error is
- * usually the real one, and the thousand that follow are consequences.
- */
+/** Read a stream, stopping at the byte cap. */
 const collect = Effect.fnUntraced(function* <E>(stream: Stream.Stream<Uint8Array, E>) {
   const chunks: Array<string> = [];
   let bytes = 0;

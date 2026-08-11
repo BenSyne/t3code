@@ -1,18 +1,6 @@
 /**
  * Where a thread sits in the inbox, and how to move it.
  *
- * Eight verbs — settle, archive, snooze, pin and their inverses — are one
- * concept wearing four names: they all answer "should this be in front of the
- * user right now". They ship as one tool rather than eight because eight
- * descriptions are charged on every request of every turn, and because the
- * model choosing between them is choosing a value, not a capability.
- *
- * Pure on purpose. Every payload shape here has a field that is easy to get
- * subtly wrong — `reason: "user"` on the un- verbs, `snoozedUntil` on snooze —
- * and this codebase has already paid for three of those, silently, behind a
- * cast. Building the command in a function a test can call means the shape is
- * checked without a running server.
- *
  * @module agent/conductor/threadLifecycle
  */
 import type {
@@ -37,14 +25,7 @@ export const THREAD_STATE_ACTIONS = [
 
 export type ThreadStateAction = (typeof THREAD_STATE_ACTIONS)[number];
 
-/**
- * The agent's view of a thread's place in the inbox.
- *
- * Deliberately coarser than the sidebar's grouping, which also weighs pending
- * approvals, background liveness and sort order. This is the part that answers
- * "does the user still have to look at this", which is all the agent needs to
- * decide whether to tidy it away.
- */
+/** The agent's view of a thread's place in the inbox. */
 export type ThreadLifecycle = "active" | "settled" | "snoozed" | "pinned" | "archived";
 
 /** Only the fields the classification reads, so it is not tied to a projection. */
@@ -56,19 +37,7 @@ export interface ThreadLifecycleFields {
   readonly pinnedAt?: string | null | undefined;
 }
 
-/**
- * Classify a thread.
- *
- * Order is precedence, strongest first. Archived wins because an archived
- * thread is out of the list entirely — whatever else is stamped on it is no
- * longer being acted on. A pin beats settled and snoozed because that is
- * exactly what a pin is for: the user said keep this in front of me, and the
- * lifecycle stamps underneath it should not quietly win.
- *
- * `nowIso` rather than reading the clock: a snooze that has already elapsed is
- * not a snoozed thread, and deciding that from an argument keeps this callable
- * from a test without freezing time.
- */
+/** Classify a thread. */
 export function lifecycleOf(thread: ThreadLifecycleFields, nowIso: string): ThreadLifecycle {
   if (thread.archivedAt !== null) {
     return "archived";
@@ -97,18 +66,7 @@ export function lifecycleOf(thread: ThreadLifecycleFields, nowIso: string): Thre
   return thread.settledAt !== null ? "settled" : "active";
 }
 
-/**
- * Order threads so the ones that need someone come first.
- *
- * Newest-first alone has a hole: a thread blocked on a question stops being
- * touched the moment it blocks, so its timestamp freezes and it sinks. Past
- * the list cap it disappears entirely — and a thread waiting for an answer is
- * the one thing in the list that will never resolve itself. It is exactly the
- * entry that must not be the one dropped.
- *
- * Blocked first, then most recent. Within blocked, still newest-first, so the
- * ordering stays predictable rather than becoming a second ranking to learn.
- */
+/** Order threads so the ones that need someone come first. */
 export function orderForAttention<
   T extends {
     readonly awaitingInput: boolean;
@@ -137,13 +95,7 @@ const MAX_SNOOZE_HOURS = 24 * 365;
 const isAction = (value: string): value is ThreadStateAction =>
   (THREAD_STATE_ACTIONS as ReadonlyArray<string>).includes(value);
 
-/**
- * Turn a requested state change into the command that performs it.
- *
- * Refusals are values because the caller hands them straight to the model,
- * which can read "that thread is still running" and pick differently. Nothing
- * here throws.
- */
+/** Turn a requested state change into the command that performs it. */
 export function planThreadStateChange(input: {
   readonly action: string;
   readonly threadId: ThreadId;

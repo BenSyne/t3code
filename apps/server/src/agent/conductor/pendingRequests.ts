@@ -1,18 +1,6 @@
 /**
  * Which questions a thread is still waiting on an answer for.
  *
- * There is no pending-requests table to read. A request arrives as a
- * `user-input.requested` activity and is closed by a `user-input.resolved`
- * one carrying the same `requestId`, so "still pending" is a fold over the
- * activity log: latest state per request wins, and the ones whose latest state
- * is still `requested` are the open ones. The sidebar's own counter is derived
- * the same way.
- *
- * This matters more than it looks. A delegated agent that stops to ask a
- * question is indistinguishable, from the outside, from one that is working —
- * same status, same absence of new messages. Without this the Conductor polls
- * a thread that will never move again.
- *
  * @module agent/conductor/pendingRequests
  */
 
@@ -37,13 +25,7 @@ export interface PendingUserInput {
 }
 
 const REQUESTED = "user-input.requested";
-/**
- * States that close a request.
- *
- * A failed response counts as closed for the same reason the projection's own
- * counter treats it that way: the provider has moved on, and re-answering a
- * request it no longer knows about only produces a second failure.
- */
+/** States that close a request. */
 const RESOLVED = new Set(["user-input.resolved", "provider.user-input.respond.failed"]);
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
@@ -79,14 +61,7 @@ const readQuestions = (payload: Record<string, unknown>): ReadonlyArray<PendingQ
   });
 };
 
-/**
- * Fold the activity log into the open questions.
- *
- * Chronological, so a request answered and then re-asked under a new id is
- * handled by both entries standing on their own, and a resolve always follows
- * the request it closes. Activities carrying no `requestId` are not part of
- * this conversation and are skipped rather than treated as malformed.
- */
+/** Fold the activity log into the open questions. */
 export function pendingUserInputOf(
   activities: ReadonlyArray<RequestActivity>,
 ): ReadonlyArray<PendingUserInput> {

@@ -1,11 +1,6 @@
 /**
  * Read a file.
  *
- * The most-used tool by a wide margin, so its defaults matter: it numbers lines
- * (models cite them, and `edit` needs them to agree), it caps how much of a
- * large file comes back, and it says plainly when it truncated rather than
- * letting the model believe it saw the whole thing.
- *
  * @module agent/tools/fs/read
  */
 import * as Effect from "effect/Effect";
@@ -103,12 +98,7 @@ export function makeReadTool(context: AgentToolContext): AgentTool {
   );
 }
 
-/**
- * Take the requested window of lines and number them.
- *
- * Exported for its own test: the off-by-one risk in 1-based offsets is real,
- * and `edit` depends on these numbers meaning what they say.
- */
+/** Take the requested window of lines and number them. */
 export function formatSlice(
   raw: string,
   offset: number | undefined,

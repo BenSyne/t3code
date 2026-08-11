@@ -1,16 +1,6 @@
 /**
  * Turning a key and a model name into something that can answer.
  *
- * This is the whole "bring your own key" promise in one function. Each backend
- * is a client layer plus a model layer; the differences between them stop here,
- * and nothing downstream — not the loop, not the tools, not the adapter — knows
- * which one is in use.
- *
- * `openai-compat` is the important one. Ollama, LM Studio, vLLM, LiteLLM and
- * most self-hosted gateways speak the OpenAI wire format at some other address,
- * so pointing the OpenAI client at that address is all local inference needs.
- * It is also the escape hatch for a provider we have never heard of.
- *
  * @module agent/model/resolveLanguageModel
  */
 import * as AnthropicClient from "@effect/ai-anthropic/AnthropicClient";
@@ -37,27 +27,14 @@ export const BACKEND_KINDS = [
 ] as const;
 export type BackendKind = (typeof BACKEND_KINDS)[number];
 
-/**
- * Cerebras' endpoint, pinned.
- *
- * A first-class backend rather than a documented `openai-compat` recipe,
- * because everything that makes the picker useful — a model list before the
- * first request, a working default, the right reasoning levels per model —
- * needs a name to hang off. The wire format is still OpenAI's, so this costs
- * one switch arm and no new dependency.
- */
+/** Cerebras' endpoint, pinned. */
 export const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1";
 
 export interface ResolveLanguageModelInput {
   readonly backend: BackendKind;
   readonly credential: Redacted.Redacted<string>;
   readonly model: string;
-  /**
-   * Override for the API base URL.
-   *
-   * Required for `openai-compat` — that backend is defined by its address —
-   * and optional elsewhere, where it covers proxies and regional endpoints.
-   */
+  /** Override for the API base URL. */
   readonly baseUrl?: string | undefined;
   /**
    * How hard to think, on the shared scale, or undefined to send nothing and
@@ -77,14 +54,7 @@ export interface ResolveLanguageModelInput {
 // type custom model names, and "slightly less effort than asked" is the right
 // failure mode where "the turn did not run" is not.
 
-/**
- * Anthropic: adaptive thinking plus a native effort level.
- *
- * The adaptive API is what makes this mapping honest — the older knob was a
- * raw token budget, and any translation to it would have been an invented
- * number. `none` disables thinking entirely, which on Anthropic is also the
- * provider default.
- */
+/** Anthropic: adaptive thinking plus a native effort level. */
 export function anthropicReasoningConfig(effort: ReasoningEffort | undefined):
   | { readonly thinking: { readonly type: "disabled" } }
   | {
@@ -126,14 +96,7 @@ export function openRouterReasoningConfig(
   return effort === undefined ? undefined : { reasoning_effort: effort };
 }
 
-/**
- * OpenAI-compatible servers: pass `reasoning_effort` through untranslated.
- *
- * The de-facto `/chat/completions` spelling, understood by vLLM, LiteLLM and
- * recent Ollama — and by Cerebras, which shares this arm. A server that has
- * never heard of it ignores the unknown field, which is exactly the behaviour
- * we want from a backend defined as "whatever is behind that address".
- */
+/** OpenAI-compatible servers: pass `reasoning_effort` through untranslated. */
 export function compatReasoningConfig(
   effort: ReasoningEffort | undefined,
 ): { readonly reasoning_effort: ReasoningEffort } | undefined {
@@ -143,13 +106,7 @@ export function compatReasoningConfig(
 /** Where a local server would be if the user has not said otherwise. */
 export const DEFAULT_LOCAL_BASE_URL = "http://localhost:11434/v1";
 
-/**
- * Which address the OpenAI-compatible client talks to.
- *
- * Cerebras is pinned: the endpoint is what makes that backend Cerebras, and
- * honouring an override would let a stray value point it somewhere else while
- * the UI still names Cerebras and the catalogue still offers its models.
- */
+/** Which address the OpenAI-compatible client talks to. */
 export function compatBaseUrl(
   backend: "cerebras" | "openai-compat",
   baseUrl: string | undefined,

@@ -1,11 +1,6 @@
 /**
  * What needs asking, given the mode the user chose.
  *
- * T3 Code already has four runtime modes and users already understand them.
- * This maps each to what the agent may do unattended. Pure, and small enough to
- * read in one go, because the consequence of getting it wrong is an agent that
- * deletes something without asking.
- *
  * @module agent/permission/profile
  */
 import type { RuntimeMode } from "@t3tools/contracts";
@@ -27,13 +22,7 @@ export interface PermissionProfile {
   readonly askBeforeDestructiveCommands: boolean;
 }
 
-/**
- * Reading is never gated.
- *
- * The agent cannot work without reading, the workspace boundary already stops
- * it reading anything else, and a prompt on every file open trains users to
- * approve without looking — which is what makes the prompts that matter useless.
- */
+/** Reading is never gated. */
 export function profileFor(mode: RuntimeMode): PermissionProfile {
   switch (mode) {
     case "approval-required":

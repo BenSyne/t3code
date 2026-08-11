@@ -2,21 +2,6 @@
 /**
  * Conversations that survive a restart.
  *
- * Sessions live in memory, which is fine until the server restarts and every
- * thread the user was working in becomes an empty box that still appears in
- * their sidebar. This writes each thread's conversation to a file so it can be
- * picked up again.
- *
- * NDJSON, one message per line, and the reader skips a line it cannot parse
- * rather than giving up on the file — so a write torn by a crash costs the tail
- * of the conversation instead of all of it.
- *
- * Each write replaces the file. Appending only the newest messages would be
- * cheaper, but it means holding an index into a conversation that compaction
- * can replace underneath you, and an index that goes stale drops a turn from
- * the file silently and permanently. The conversation is small enough that
- * rewriting it costs nothing next to the network round trip that produced it.
- *
  * @module agent/state/TranscriptStore
  */
 import * as NodePath from "node:path";
@@ -28,11 +13,7 @@ import * as Prompt from "effect/unstable/ai/Prompt";
 export interface TranscriptStore {
   /** Read a thread back, or an empty prompt if there is nothing to read. */
   readonly read: (threadId: ThreadId) => Effect.Effect<Prompt.Prompt>;
-  /**
-   * Write a thread's conversation, replacing whatever was there.
-   *
-   * Never fails: losing history is not worth losing a turn.
-   */
+  /** Write a thread's conversation, replacing whatever was there. */
   readonly replace: (threadId: ThreadId, prompt: Prompt.Prompt) => Effect.Effect<void>;
   readonly forget: (threadId: ThreadId) => Effect.Effect<void>;
 }

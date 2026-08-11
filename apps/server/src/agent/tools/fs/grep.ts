@@ -2,14 +2,6 @@
 /**
  * Search file contents by regular expression.
  *
- * Implemented in-process rather than by shelling out to `rg`, so it behaves the
- * same on a machine that does not have ripgrep installed — which, for a feature
- * whose whole promise is "bring a key and go", is most of them.
- *
- * The caps are the interesting part. A grep that returns ten thousand hits
- * costs more context than the file it was avoiding, so matches, files, and
- * per-line length are all bounded, and the tool says when it stopped early.
- *
  * @module agent/tools/fs/grep
  */
 import * as NodeFSP from "node:fs/promises";
@@ -95,13 +87,7 @@ type CompiledPattern =
   | { readonly _tag: "Compiled"; readonly regex: RegExp }
   | { readonly _tag: "Invalid"; readonly message: string };
 
-/**
- * Compile the model's pattern, reporting a bad one as a tool failure.
- *
- * Exported for its own test: a malformed regex arriving from a model is a
- * routine event, not an exceptional one, and it must never reach the loop as a
- * thrown `SyntaxError`.
- */
+/** Compile the model's pattern, reporting a bad one as a tool failure. */
 export function compilePattern(pattern: string, caseInsensitive: boolean): CompiledPattern {
   try {
     return { _tag: "Compiled", regex: new RegExp(pattern, caseInsensitive ? "i" : "") };

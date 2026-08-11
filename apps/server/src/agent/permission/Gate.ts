@@ -1,13 +1,6 @@
 /**
  * Waiting for a human to say yes.
  *
- * A tool that needs approval parks on a `Deferred` until the client answers.
- * The interesting requirement is the one that is easy to miss: when a session
- * ends with requests still open, every one of them has to be resolved, or the
- * fibers waiting on them hang forever and the turn never completes. That is the
- * reject cascade, and it is the reason this is a module with a test rather than
- * a map inside the adapter.
- *
  * @module agent/permission/Gate
  */
 import * as Deferred from "effect/Deferred";
@@ -26,21 +19,11 @@ export interface PendingApproval {
 export interface ApprovalGate {
   /** Park until the request is answered. Resolves to a decision, never fails. */
   readonly await: (request: PendingApproval) => Effect.Effect<ApprovalDecision>;
-  /**
-   * Answer a pending request.
-   *
-   * Returns false for an id that is not waiting, which the adapter turns into
-   * the "no longer waiting" message rather than a silent success.
-   */
+  /** Answer a pending request. */
   readonly resolve: (requestId: string, decision: ApprovalDecision) => Effect.Effect<boolean>;
   /** Everything still waiting, for a client that reconnects mid-turn. */
   readonly pending: Effect.Effect<ReadonlyArray<PendingApproval>>;
-  /**
-   * Deny everything outstanding.
-   *
-   * Called when a session closes. Denial rather than approval: if nobody is
-   * left to say yes, the answer is no.
-   */
+  /** Deny everything outstanding. */
   readonly rejectAll: Effect.Effect<void>;
 }
 

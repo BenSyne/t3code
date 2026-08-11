@@ -1,16 +1,6 @@
 /**
  * Token accounting for a thread.
  *
- * The AI stack reports usage per request. A thread runs many requests, and the
- * UI shows one running total, so somebody has to add them up. That somebody is
- * this file, kept pure and separate because a context-window meter that drifts
- * is worse than no meter — the user makes decisions about compaction based on
- * it.
- *
- * `used` is the *current* context size, not the lifetime sum. Those diverge the
- * moment a turn is compacted, and conflating them is how a progress bar ends up
- * reading 340%.
- *
  * @module agent/events/usage
  */
 import type { ThreadTokenUsageSnapshot } from "@t3tools/contracts";
@@ -45,13 +35,7 @@ export interface UsageTally {
   readonly costUsd: number;
   /** What the most recent request cost, so one exchange has a visible price. */
   readonly lastCostUsd: number;
-  /**
-   * How the figure was reached.
-   *
-   * Sticky at `unpriced` once anything in the thread could not be priced: a
-   * running total that silently omits a leg is worse than one that admits it
-   * is incomplete.
-   */
+  /** How the figure was reached. */
   readonly costSource: TurnCost["costSource"];
 }
 
@@ -67,13 +51,7 @@ export const EMPTY_USAGE: UsageTally = {
   costSource: "modelPriced",
 };
 
-/**
- * Fold one request's usage into the running tally.
- *
- * Missing fields count as zero rather than making the whole snapshot absent:
- * providers vary in what they report, and a meter that disappears whenever a
- * provider omits `cacheRead` is less useful than one that is slightly low.
- */
+/** Fold one request's usage into the running tally. */
 export function foldUsage(
   tally: UsageTally,
   usage: RequestUsage,
@@ -97,13 +75,7 @@ export function foldUsage(
   };
 }
 
-/**
- * Token counts in the shape the pricing table expects.
- *
- * `uncachedInputTokens` excludes the cached portion, because the two are
- * charged at different rates and double-counting the cache inflates the bill
- * the user is shown.
- */
+/** Token counts in the shape the pricing table expects. */
 export function toPricingTotals(usage: RequestUsage): {
   readonly uncachedInputTokens: number;
   readonly cachedInputTokens: number;
@@ -122,13 +94,7 @@ export function toPricingTotals(usage: RequestUsage): {
   };
 }
 
-/**
- * Render the tally as the wire snapshot.
- *
- * `maxTokens` comes from the model's known context window when we have one.
- * Omitted rather than guessed: a wrong denominator makes the meter actively
- * misleading, which is worse than showing a raw count.
- */
+/** Render the tally as the wire snapshot. */
 export function toUsageSnapshot(
   tally: UsageTally,
   contextWindow: number | null,

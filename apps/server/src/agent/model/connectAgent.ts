@@ -1,16 +1,6 @@
 /**
  * Connect a key to the built-in agent: verify it, then store it.
  *
- * In that order, deliberately. Storing first leaves a typo sitting on the
- * instance looking configured, and the first thing the user learns about it is
- * a turn that dies. Nothing is written unless the provider has confirmed the
- * key works.
- *
- * The key is written through the same sensitive-environment path the settings
- * form already uses, so it lands in the secrets directory and `settings.json`
- * keeps only a redaction marker. This module introduces no new storage for
- * secrets.
- *
  * @module agent/model/connectAgent
  */
 import {
@@ -36,12 +26,7 @@ export function asBackendKind(value: string): BackendKind | undefined {
     : undefined;
 }
 
-/**
- * Verify a candidate key and store it when it works.
- *
- * Returns the outcome rather than failing, because all three cases are ordinary
- * things for a user to do and every caller has to render them anyway.
- */
+/** Verify a candidate key and store it when it works. */
 export const connectAgent = Effect.fnUntraced(function* (input: {
   readonly instanceId: ProviderInstanceId;
   readonly backend: string;

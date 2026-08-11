@@ -1,11 +1,6 @@
 /**
  * The live sessions an agent instance owns.
  *
- * Split from the adapter so that file stays what it should be — translation
- * between the T3 Code contract and the agent — while the rules about which
- * sessions exist, when one is usable, and how history is trimmed live here and
- * can be tested without a provider.
- *
  * @module agent/loop/sessionStore
  */
 import type { ThreadId } from "@t3tools/contracts";
@@ -35,13 +30,7 @@ type CreateInput = Omit<Parameters<typeof makeSessionContext>[0], "prompt"> & {
 export function createSessionStore(provider: string) {
   const sessions: AgentSessionMap = new Map();
 
-  /**
-   * Fetch a session that is safe to act on.
-   *
-   * "Missing" and "closed" are deliberately different failures: the first means
-   * the caller is confused about which thread it holds, the second means the
-   * work it wanted is genuinely over.
-   */
+  /** Fetch a session that is safe to act on. */
   const require = (threadId: ThreadId): Effect.Effect<AgentSessionContext, SessionLookupError> => {
     const context = sessions.get(threadId);
     if (!context) {
@@ -59,12 +48,7 @@ export function createSessionStore(provider: string) {
     return context;
   };
 
-  /**
-   * Close a session and drop it.
-   *
-   * Returns whether this call did the closing, so the caller emits exactly one
-   * exit event no matter how many times it is asked to stop.
-   */
+  /** Close a session and drop it. */
   const close = (context: AgentSessionContext, updatedAt: string): boolean => {
     const closed = closeSession(context, updatedAt);
     if (closed) {
@@ -91,14 +75,7 @@ export function createSessionStore(provider: string) {
     turns: context.turns.map((turn) => ({ id: turn.id, items: turn.items })),
   });
 
-  /**
-   * Drop the last `numTurns` turns, conversation included.
-   *
-   * Exact rather than best-effort: each turn recorded how long the conversation
-   * was before it ran, so undoing one restores precisely the prompt the model
-   * would have seen. Out-of-range counts clamp rather than throw — rolling back
-   * more turns than exist means "go back to the start".
-   */
+  /** Drop the last `numTurns` turns, conversation included. */
   const rollback = (context: AgentSessionContext, numTurns: number): void => {
     const drop = Math.min(context.turns.length, Math.max(0, numTurns));
     if (drop === 0) {

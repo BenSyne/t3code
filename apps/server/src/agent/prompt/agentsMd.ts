@@ -2,27 +2,13 @@
 /**
  * Project instructions, read from the repository.
  *
- * Every agent has settled on a markdown file at the repo root holding the
- * project's own rules, and every one of them picked a different name. Reading
- * all of the common ones costs one directory listing and means a user who
- * already wrote `CLAUDE.md` for another tool does not have to write it again.
- *
- * Failure is never fatal. A missing file is the normal case; an unreadable one
- * is the user's problem to see in a warning, not a reason the turn cannot run.
- *
  * @module agent/prompt/agentsMd
  */
 import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 
-/**
- * Checked in order, and all matches are used.
- *
- * A repo with both `AGENTS.md` and `CLAUDE.md` usually has them saying
- * different things on purpose, and silently ignoring one is worse than
- * including both.
- */
+/** Checked in order, and all matches are used. */
 export const PROJECT_INSTRUCTION_FILES = [
   "AGENTS.md",
   "CLAUDE.md",
@@ -42,13 +28,7 @@ export interface ProjectContext {
 
 export const EMPTY_PROJECT_CONTEXT: ProjectContext = { text: "", sources: [] };
 
-/**
- * Read whichever instruction files this repository has.
- *
- * Never fails: an unreadable file is skipped, because a turn that refuses to
- * start over a permissions problem on an optional file is a worse outcome than
- * a turn that runs without project-specific guidance.
- */
+/** Read whichever instruction files this repository has. */
 export const readProjectContext = Effect.fnUntraced(function* (input: {
   readonly fileSystem: FileSystem.FileSystem;
   readonly workspaceRoot: string;

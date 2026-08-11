@@ -1,19 +1,6 @@
 /**
  * What the agent knows about T3 Code itself.
  *
- * Without this the agent is a competent coding assistant that happens to run
- * inside T3 Code and knows nothing about it — ask it "how do I point Codex at a
- * different model" and it guesses, or greps a filesystem that has no answer,
- * because the app's own documentation is not in the project it is working on.
- *
- * These are written for the agent, not lifted from the user guide. A human
- * reading a docs page wants prose and screenshots; the agent needs the concept,
- * the exact place a thing lives, and the failure it will otherwise walk into.
- *
- * They ride the skill mechanism, so they cost one line of context each until the
- * agent decides it needs one. That is what makes it affordable to ship this much
- * — the full text only arrives when a question actually calls for it.
- *
  * @module agent/knowledge/builtinSkills
  */
 import type { DiscoveredSkill } from "../skills/discover.ts";
@@ -490,13 +477,7 @@ stays, so you can tell the agent what went wrong.`,
   },
 ];
 
-/**
- * Built-in knowledge as skills.
- *
- * `location` is a marker rather than a path — nothing reads these from disk,
- * because they are compiled in and must work in a packaged build where the
- * repository's docs directory does not exist.
- */
+/** Built-in knowledge as skills. */
 export const BUILTIN_SKILLS: ReadonlyArray<DiscoveredSkill> = SKILLS.map((skill) => ({
   name: skill.name,
   description: skill.description,

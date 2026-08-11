@@ -1,18 +1,6 @@
 /**
  * Ask a provider whether a key is real, before anything is stored.
  *
- * Connecting used to fail at the worst possible moment: the key was saved, the
- * instance looked configured, and the first thing the user learned about a typo
- * was a dead turn. So the key is checked first and written only if it works.
- *
- * The check is a `GET` of the provider's model list — cheap, no tokens, and
- * meaningful, because listing models is exactly the authorisation this key needs
- * to have. A completion would cost money to learn the same thing.
- *
- * Three outcomes rather than a boolean. "That key was refused" and "nothing
- * answered at that address" send the user to completely different places, and a
- * local-server user will hit the second one constantly.
- *
  * @module agent/model/verifyCredential
  */
 import * as Effect from "effect/Effect";
@@ -37,12 +25,7 @@ export interface CredentialProbe {
   readonly headers: Readonly<Record<string, string>>;
 }
 
-/**
- * Build the probe for a backend.
- *
- * Anthropic is the odd one out — its own header and a required API version —
- * which is exactly why this is a function and not a base-URL string.
- */
+/** Build the probe for a backend. */
 export function probeFor(input: {
   readonly backend: BackendKind;
   readonly credential: Redacted.Redacted<string> | undefined;
@@ -79,13 +62,7 @@ export function probeFor(input: {
   }
 }
 
-/**
- * Turn an HTTP status into an outcome.
- *
- * 401 and 403 are the honest "your key is wrong". Everything else that is not a
- * success is still the provider talking, so it is reported as a rejection with
- * its status rather than pretending the network failed.
- */
+/** Turn an HTTP status into an outcome. */
 export function outcomeForStatus(status: number, modelCount: number): ConnectOutcome {
   if (status >= 200 && status < 300) {
     return { _tag: "Ok", modelCount };
@@ -112,12 +89,7 @@ export function countModels(body: unknown): number {
   return Array.isArray(data) ? data.length : 0;
 }
 
-/**
- * Run the probe.
- *
- * Never fails: a transport error is an outcome, not an error channel, because
- * every caller has to render all three cases anyway.
- */
+/** Run the probe. */
 export const verifyCredential = Effect.fnUntraced(function* (input: {
   readonly backend: BackendKind;
   readonly credential: Redacted.Redacted<string> | undefined;

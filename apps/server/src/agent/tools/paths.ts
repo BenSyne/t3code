@@ -2,30 +2,6 @@
 /**
  * Keeping tools inside the workspace.
  *
- * Every file tool takes a path from the model, and the model is not a trusted
- * caller. This module is the one place that decides whether a path is allowed,
- * expressed as pure string arithmetic so the rule can be tested exhaustively
- * without a filesystem.
- *
- * ## Two checks, not one
- *
- * String containment alone is not sufficient: `<root>/link` may be a symlink
- * pointing at `/etc`, and no amount of `path.resolve` will notice. So callers
- * check twice — {@link resolveWithinRoot} before touching the disk, which is
- * cheap and rejects the obvious cases, and {@link isWithinRoot} again on the
- * path returned by `realpath`, which is authoritative. The pre-check is an
- * optimisation and a better error message; the post-check is the security
- * boundary. A tool that skips the second one has a hole in it.
- *
- * ## Why not `WorkspacePaths.resolveRelativePathWithinRoot`
- *
- * That service answers a deliberately stricter question, for the file tree: it
- * refuses absolute paths outright and refuses the root itself. Both are correct
- * there and wrong here — a model routinely emits an absolute path it read out
- * of a stack trace, and `glob` legitimately starts at the root. This module
- * also returns a value rather than failing an `Effect`, because tool handlers
- * run with `failureMode: "return"` and need the rejection as data.
- *
  * @module agent/tools/paths
  */
 import * as NodePath from "node:path";
@@ -53,12 +29,7 @@ export type ResolvedPath =
       readonly requested: string;
     };
 
-/**
- * Is `candidate` the root or somewhere beneath it?
- *
- * Both arguments must already be absolute and normalised. This is the check to
- * re-run against a `realpath` result — it is the authoritative one.
- */
+/** Is `candidate` the root or somewhere beneath it? */
 export function isWithinRoot(root: string, candidate: string): boolean {
   const normalisedRoot = NodePath.resolve(root);
   const normalisedCandidate = NodePath.resolve(candidate);
@@ -71,13 +42,7 @@ export function isWithinRoot(root: string, candidate: string): boolean {
   return relative !== "" && !relative.startsWith("..") && !NodePath.isAbsolute(relative);
 }
 
-/**
- * Resolve a model-supplied path against the workspace root.
- *
- * Relative paths are taken as relative to the root, which is what a model means
- * by `src/index.ts`. Absolute paths are honoured but still have to land inside
- * the root, so pasting `/etc/passwd` fails the same way `../../etc/passwd` does.
- */
+/** Resolve a model-supplied path against the workspace root. */
 export function resolveWithinRoot(input: {
   readonly root: string;
   readonly candidate: string;
@@ -107,13 +72,7 @@ export function resolveWithinRoot(input: {
   };
 }
 
-/**
- * The sentence the model sees when a path is refused.
- *
- * Written to be actionable: the model should learn what to do differently, not
- * just that something went wrong. It never echoes an absolute path outside the
- * root back into the transcript.
- */
+/** The sentence the model sees when a path is refused. */
 export function describeRejection(rejection: {
   readonly reason: PathRejection;
   readonly requested: string;

@@ -2,14 +2,6 @@
 /**
  * The containment check, with a filesystem attached.
  *
- * `paths.ts` decides what a path string means; this decides whether the thing
- * it points at is really inside the workspace. The difference is symlinks —
- * `<root>/notes` can be a link to `/etc`, and only `realPath` reveals it.
- *
- * Every filesystem tool goes through here. That is the invariant worth
- * protecting in review: a tool that calls `resolveWithinRoot` and then opens the
- * file itself has skipped the half of the check that matters.
- *
  * @module agent/tools/safePath
  */
 import * as NodePath from "node:path";
@@ -32,12 +24,7 @@ interface SafePathInput {
   readonly candidate: string;
 }
 
-/**
- * Resolve a path that must already exist.
- *
- * Fails if it does not, so tools that read get a clear "no such file" instead
- * of a confusing containment error.
- */
+/** Resolve a path that must already exist. */
 export const resolveExisting = Effect.fnUntraced(function* (input: SafePathInput) {
   const resolved = yield* pureResolve(input);
 
@@ -48,13 +35,7 @@ export const resolveExisting = Effect.fnUntraced(function* (input: SafePathInput
   return yield* confirmContained({ ...input, real, requested: resolved.relativePath });
 });
 
-/**
- * Resolve a path that may not exist yet.
- *
- * Walks up to the nearest existing ancestor and checks containment there, which
- * is what catches `<root>/link-to-elsewhere/new-file.txt` — the file is not
- * there to resolve, but the directory it would land in is.
- */
+/** Resolve a path that may not exist yet. */
 export const resolveForWrite = Effect.fnUntraced(function* (input: SafePathInput) {
   const resolved = yield* pureResolve(input);
 

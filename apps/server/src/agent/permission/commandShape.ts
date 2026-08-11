@@ -1,19 +1,6 @@
 /**
  * Reading a shell command well enough to know if it should be asked about.
  *
- * This is a heuristic and is written to be honest about that. A shell is a
- * programming language; anything short of running it cannot tell you for
- * certain what it will do. So the goal here is narrow and achievable: catch the
- * shapes that are *obviously* destructive or that fetch-and-execute, so those
- * always prompt even in a mode that otherwise runs commands unattended.
- *
- * It is a prompt trigger, never a security boundary. Someone determined to get
- * a command past it can, and the answer to that is the approval prompt and the
- * workspace boundary — not a cleverer regex. Treating this as a sandbox would
- * be the dangerous mistake.
- *
- * Pure, so every judgement is table-testable.
- *
  * @module agent/permission/commandShape
  */
 
@@ -40,14 +27,7 @@ const DESTRUCTIVE_PROGRAMS = new Set(["rm", "rmdir", "shred", "mkfs", "dd", "fdi
 /** Fetchers: harmless alone, the first half of fetch-and-execute. */
 const FETCHERS = new Set(["curl", "wget", "fetch"]);
 
-/**
- * Break a command line into the programs it runs.
- *
- * Splits on the shell operators that start a new command and takes the first
- * bare word of each part. Quoting is respected just enough not to split inside
- * a string, which is where a naive split goes wrong on ordinary commands like
- * `git commit -m "a && b"`.
- */
+/** Break a command line into the programs it runs. */
 export function analyzeCommand(command: string): CommandShape {
   const segments = splitOnOperators(command);
   const programs: Array<string> = [];
@@ -71,12 +51,7 @@ export function analyzeCommand(command: string): CommandShape {
   };
 }
 
-/**
- * Does this command deserve a prompt even in an unattended mode?
- *
- * Ordered so the most specific reason wins, because the reason is shown to the
- * user and "downloads and runs a script" is more useful than "removes files".
- */
+/** Does this command deserve a prompt even in an unattended mode? */
 export function judgeCommand(command: string): DangerVerdict {
   const shape = analyzeCommand(command);
   const names = shape.programs.map(basename);

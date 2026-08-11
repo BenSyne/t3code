@@ -1,17 +1,6 @@
 /**
  * A thread rendered as something another model can read.
  *
- * What the agent needs from someone else's thread is not the chat. It is:
- * what was asked, what was done, whether anything broke, and what the
- * conclusion was. Messages alone answer the first and last of those, which is
- * why reading a delegated thread used to come back looking fine while the work
- * inside it had failed — the failure was an activity, and activities were not
- * rendered at all.
- *
- * Pure, so the trimming rules are testable. They are the part with teeth: this
- * output lands in a context window that also has to hold the agent's own work,
- * and a thread that pasted a whole build log into it would end the turn.
- *
  * @module agent/conductor/transcript
  */
 import type { PendingUserInput } from "./pendingRequests.ts";
@@ -40,15 +29,7 @@ export interface TranscriptInput {
   readonly status: string;
   readonly messages: ReadonlyArray<TranscriptMessage>;
   readonly activities: ReadonlyArray<TranscriptActivity>;
-  /**
-   * Questions the thread is blocked on.
-   *
-   * Reported here rather than through a tool of its own, because this is
-   * already where the agent looks to collect a result — and "it is waiting for
-   * you" is the single most important thing a read can say. A blocked thread
-   * looks exactly like a working one from the outside, so without this the
-   * only available move is to poll something that will never change.
-   */
+  /** Questions the thread is blocked on. */
   readonly pending?: ReadonlyArray<PendingUserInput> | undefined;
 }
 
@@ -57,19 +38,7 @@ const truncate = (text: string, limit: number): string =>
 
 type Entry = { readonly createdAt: string; readonly line: string };
 
-/**
- * Render the thread.
- *
- * Messages and activities are interleaved by time rather than listed in two
- * blocks, because "it said it was done" and "the build failed" only mean
- * something in the order they happened.
- *
- * The tail, not the head: a long thread's recent turns are what a reader needs,
- * and the earlier ones are reported as a count so a truncated view is never
- * mistaken for the whole thread. Errors are counted across the *whole* thread
- * for the same reason — a failure early in a long run would otherwise fall off
- * the top and read as a clean transcript.
- */
+/** Render the thread. */
 export function renderTranscript(input: TranscriptInput): string {
   const entries: Array<Entry> = [
     ...input.messages.map((message) => ({
@@ -108,13 +77,7 @@ export function renderTranscript(input: TranscriptInput): string {
   return [...header, "", ...body, ...blockedSection(input.pending ?? [])].join("\n");
 }
 
-/**
- * The "it is waiting for you" block.
- *
- * Last rather than first, so it is the freshest thing in the reader's context,
- * and explicit about the answer shape because getting it wrong sends nonsense
- * to an agent that is stuck until someone sends something.
- */
+/** The "it is waiting for you" block. */
 function blockedSection(pending: ReadonlyArray<PendingUserInput>): ReadonlyArray<string> {
   if (pending.length === 0) {
     return [];

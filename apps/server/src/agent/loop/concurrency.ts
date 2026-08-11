@@ -1,16 +1,6 @@
 /**
  * How many turns may run at once.
  *
- * Two limits, because they guard different failures. One turn per thread stops
- * a second message from racing the first through the same conversation — two
- * turns appending to one prompt interleave into nonsense, and the transcript
- * cannot be untangled afterwards. A cap across all threads stops the Conductor
- * from opening thirty threads and hitting a provider's rate limit hard enough
- * to get the user's key throttled.
- *
- * Queueing rather than rejecting: a user who sends two messages quickly means
- * both, in order.
- *
  * @module agent/loop/concurrency
  */
 import type { ThreadId } from "@t3tools/contracts";
@@ -27,12 +17,7 @@ export const DEFAULT_CONCURRENCY_LIMITS: ConcurrencyLimits = {
 };
 
 export interface AgentConcurrency {
-  /**
-   * Run `work` holding both a thread slot and a global slot.
-   *
-   * Acquired in that order everywhere, which is what keeps two threads from
-   * deadlocking by each holding the lock the other needs.
-   */
+  /** Run `work` holding both a thread slot and a global slot. */
   readonly withTurnSlot: <A, E, R>(
     threadId: ThreadId,
     work: Effect.Effect<A, E, R>,

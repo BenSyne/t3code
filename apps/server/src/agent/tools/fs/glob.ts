@@ -2,10 +2,6 @@
 /**
  * Find files by name.
  *
- * Backed by Node's own `fs.glob`, which is why this adds no dependency. Results
- * are sorted newest-first, because when a model asks for `**\/*.test.ts` it is
- * almost always looking for the tests near the code it just touched.
- *
  * @module agent/tools/fs/glob
  */
 import * as NodeFSP from "node:fs/promises";
@@ -69,12 +65,7 @@ export function makeGlobTool(context: AgentToolContext): AgentTool {
   );
 }
 
-/**
- * Resolve the directory to search, defaulting to the workspace root.
- *
- * Shared with `grep`, which takes the same optional `path` and needs the same
- * containment guarantee.
- */
+/** Resolve the directory to search, defaulting to the workspace root. */
 export const resolveSearchRoot = Effect.fnUntraced(function* (
   context: AgentToolContext,
   path: string | undefined,
@@ -103,12 +94,7 @@ async function collectMatches(root: string, pattern: string): Promise<Array<stri
   return found;
 }
 
-/**
- * Newest first, unreadable entries last.
- *
- * A file that vanished between the walk and the `stat` is not an error worth
- * failing the tool over — it just sorts to the bottom.
- */
+/** Newest first, unreadable entries last. */
 async function sortByRecency(root: string, matches: ReadonlyArray<string>): Promise<Array<string>> {
   const stamped = await Promise.all(
     matches.map(async (relative) => {

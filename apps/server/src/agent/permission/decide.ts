@@ -1,19 +1,6 @@
 /**
  * The one place that decides whether a tool call runs, asks, or is refused.
  *
- * Three inputs, in a fixed order of precedence:
- *
- *   1. The mode's profile — the baseline the user picked.
- *   2. The destructive-command check — can raise `allow` to `ask`, never lower.
- *   3. The user's rules — the last word, because an explicit rule is the user
- *      saying they already thought about this exact case.
- *
- * That ordering is the interesting decision. Rules come last so `allow git push`
- * genuinely stops the prompt, even though the heuristic flags it. A user who
- * writes a rule has been more specific than any guess we can make.
- *
- * Pure, and the whole matrix is table-tested.
- *
  * @module agent/permission/decide
  */
 import type { RuntimeMode } from "@t3tools/contracts";

@@ -1,13 +1,6 @@
 /**
  * The tools the agent always has.
  *
- * Listed first among contributors, so nothing discovered at runtime — an MCP
- * server, a skill — can take one of these names out from under the model.
- *
- * The tools that change something are wrapped in the approval gate here rather
- * than asking inside their own handlers. A tool that has to remember to ask is
- * a tool that will eventually forget, and the failure is silent.
- *
  * @module agent/tools/core
  */
 import * as Effect from "effect/Effect";

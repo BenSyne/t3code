@@ -1,18 +1,15 @@
 /**
  * Which tools a turn can call, and where they come from.
  *
- * The loop never names a tool. It asks the registry for a toolkit and runs
- * whatever it gets back. That indirection is the whole point: MCP servers,
- * skills, and cross-provider orchestration all arrive later as
- * {@link ToolContributor}s, and none of them requires the loop to change.
- *
- * ## The one cast in this file
+ * The loop never names a tool — it asks the registry for a toolkit and runs
+ * whatever it gets back, so MCP servers, skills and cross-provider
+ * orchestration can arrive later as {@link ToolContributor}s without the loop
+ * changing.
  *
  * A registry whose contents are decided at runtime cannot be a statically-keyed
- * record — that is what "decided at runtime" means. So the tool/handler pair is
- * erased here and re-associated by name. {@link defineTool} is the only way to
- * build a pair, and it is fully typed, so every individual tool is checked at
- * its definition site. The erasure is contained to {@link buildToolkit}.
+ * record, so the tool/handler pair is erased here and re-associated by name.
+ * {@link defineTool} is the only way to build a pair and is fully typed, which
+ * keeps the erasure contained to {@link buildToolkit}.
  *
  * @module agent/tools/registry
  */
@@ -29,26 +26,21 @@ import { toolFailure, type ToolFailure } from "./failure.ts";
 /**
  * What a tool is allowed to reach.
  *
- * Services are resolved once, when the session is built, and handed over as
- * plain values. Handlers therefore have no requirements of their own, which is
- * what keeps `runTurn` runnable against a stub with no platform layer at all.
+ * Services are resolved once when the session is built and handed over as plain
+ * values, so handlers have no requirements of their own and `runTurn` stays
+ * runnable against a stub with no platform layer.
  */
 export interface AgentToolContext {
   /** Absolute path every file tool is confined to. */
   readonly workspaceRoot: string;
   readonly fileSystem: FileSystem.FileSystem;
   readonly spawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
-  /**
-   * Environment for spawned commands. Comes from the provider instance, so a
-   * command sees the same `PATH` and credentials the rest of the instance does.
-   */
+  /** From the provider instance, so commands see the same `PATH` and credentials. */
   readonly commandEnv: Record<string, string>;
   /**
-   * Ask before acting.
-   *
    * Wrapped around handlers by {@link withApproval} rather than called inside
-   * them, so a tool cannot forget to ask: forgetting means not opting in, and
-   * the tool then has no approval path at all rather than a broken one.
+   * them: forgetting to ask then means no approval path at all rather than a
+   * broken one.
    */
   readonly requestApproval: (input: {
     readonly toolName: string;
@@ -67,12 +59,9 @@ export interface AgentTool {
 }
 
 /**
- * A handler with its schemas forgotten but its failure channel named.
- *
- * The success type genuinely varies per tool and is erased. The failure type
- * does not: every tool declares `ToolFailure`, and the AI stack may raise its
- * own error, so saying so keeps `unknown` out of the error channel where it
- * would silently disable the checking that catches an unhandled failure.
+ * The success type genuinely varies per tool and is erased; the failure type
+ * does not, and naming it keeps `unknown` out of the error channel where it
+ * would disable the checking that catches an unhandled failure.
  */
 type ErasedHandler = (
   params: never,
@@ -82,16 +71,11 @@ type ErasedHandler = (
 /**
  * Pair a tool with its handler, checked against that tool's own schemas.
  *
- * The handler may fail with the tool's declared failure type. Tools are built
- * with `failureMode: "return"`, so such a failure is handed to the model as a
- * result it can read and recover from, rather than ending the turn.
- *
- * A handler that *throws* is a different matter. `failureMode` governs declared
- * failures; a defect — a bug, a library throwing where it said it would not —
- * bypasses it entirely and takes the turn down. Since a tool is the least
- * trustworthy code in the loop (MCP servers are third-party by definition),
- * every handler is wrapped so a defect becomes an ordinary tool failure the
- * model can read and work around.
+ * Tools are built with `failureMode: "return"`, so a declared failure reaches
+ * the model as a readable result. A *defect* bypasses that entirely and takes
+ * the turn down — and a tool is the least trustworthy code in the loop, since
+ * MCP servers are third-party by definition. So every handler is wrapped to
+ * turn a defect into an ordinary tool failure.
  */
 export function defineTool<T extends Tool.Any>(
   tool: T,
@@ -112,11 +96,9 @@ export function defineTool<T extends Tool.Any>(
 /**
  * Gate a tool behind approval.
  *
- * Wraps an already-defined tool, so the tool's own handler never has to think
- * about permissions and cannot be written in a way that skips them. A denial
- * comes back as an ordinary tool failure: the model is told plainly that the
- * user said no, which is something it can respond to sensibly, rather than
- * being left to infer it from a crash.
+ * Wraps an already-defined tool so its handler cannot be written in a way that
+ * skips permissions. A denial comes back as an ordinary tool failure, which the
+ * model can respond to rather than infer from a crash.
  */
 export function withApproval(
   entry: AgentTool,
@@ -148,10 +130,9 @@ function describeDefect(defect: unknown): string {
 /**
  * A source of tools.
  *
- * Contributors are constructed with whatever services they need already
- * provided, so contributing has no requirements and cannot fail — a broken MCP
- * server yields zero tools and a warning, it does not take the turn down with
- * it.
+ * Contributors are constructed with their services already provided, so
+ * contributing cannot fail — a broken MCP server yields zero tools and a
+ * warning rather than taking the turn down.
  */
 export interface ToolContributor {
   /** Identifies the source in warnings, e.g. `"core"`, `"mcp:github"`. */
@@ -169,18 +150,16 @@ export interface DroppedTool {
 export interface ResolvedTools {
   readonly tools: ReadonlyArray<AgentTool>;
   /**
-   * Name collisions, in the order they were hit. Surfaced as a warning rather
-   * than resolved silently: an MCP server that shadows `read_file` changes what
-   * the agent does to your disk, and you should be told.
+   * Surfaced rather than resolved silently: an MCP server that shadows
+   * `read_file` changes what the agent does to your disk.
    */
   readonly dropped: ReadonlyArray<DroppedTool>;
 }
 
 /**
- * Ask every contributor for its tools, first claim on a name wins.
- *
- * Order is the priority order: core tools are listed first precisely so nothing
- * discovered at runtime can take their names.
+ * Ask every contributor for its tools, first claim on a name wins. Order is the
+ * priority order — core tools are listed first so nothing discovered at runtime
+ * can take their names.
  */
 export const resolveTools = Effect.fnUntraced(function* (
   contributors: ReadonlyArray<ToolContributor>,
@@ -210,17 +189,15 @@ export const resolveTools = Effect.fnUntraced(function* (
 /**
  * `Tool.Any` with the requirements pinned to `never`.
  *
- * `Tool.Any` leaves them `any`, which would spread through every caller of
- * {@link buildToolkit} and quietly disable the checking that stops a service
- * from going unprovided. `defineTool` already guarantees handlers need nothing,
- * so stating that here loses no information.
+ * `Tool.Any` leaves them `any`, which spreads through every caller and disables
+ * the checking that stops a service going unprovided. `defineTool` already
+ * guarantees handlers need nothing, so stating it here loses no information.
  */
 export interface SelfContainedTool extends Tool.Tool<
   string,
   {
     // `Schema.Top` would leave the decoding services `unknown`, which the
-    // requirements channel picks up just as readily as `any`. Naming `never`
-    // on both sides says what is actually true of these schemas.
+    // requirements channel picks up just as readily as `any`.
     readonly parameters: SelfContainedSchema;
     readonly success: SelfContainedSchema;
     readonly failure: SelfContainedSchema;
@@ -233,12 +210,7 @@ type SelfContainedSchema = Schema.Codec<any, any, never, never>;
 
 export type AgentToolkit = Toolkit.WithHandler<Record<string, SelfContainedTool>>;
 
-/**
- * Turn resolved tools into something `streamText` accepts.
- *
- * The result is an `Effect` yielding a handler-bearing toolkit, which is one of
- * the shapes the AI stack takes for its `toolkit` option.
- */
+/** Turn resolved tools into something `streamText` accepts. */
 export function buildToolkit(tools: ReadonlyArray<AgentTool>): Effect.Effect<AgentToolkit> {
   const toolkit = Toolkit.make(...tools.map((entry) => entry.tool));
   const handlers: Record<string, ErasedHandler> = {};
@@ -246,8 +218,8 @@ export function buildToolkit(tools: ReadonlyArray<AgentTool>): Effect.Effect<Age
     handlers[entry.tool.name] = entry.handler;
   }
   // See the module note: names are known only at runtime, so the record cannot
-  // be checked against the toolkit's key type. Every handler in it was type-
-  // checked against its own tool by `defineTool`.
+  // be checked against the toolkit's key type. `defineTool` already checked
+  // every handler against its own tool.
   return Effect.provide(
     toolkit,
     toolkit.toLayer(handlers as never),

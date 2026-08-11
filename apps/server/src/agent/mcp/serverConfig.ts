@@ -1,20 +1,11 @@
 /**
  * How a user describes an MCP server.
  *
- * Deliberately the same shape every other agent uses — `command`, `args`, `env`
- * for a local server; `url` and `headers` for a remote one — so a config the
- * user already wrote elsewhere can be pasted in unchanged.
- *
  * @module agent/mcp/serverConfig
  */
 import * as Schema from "effect/Schema";
 
-/**
- * A server started as a subprocess and spoken to over its stdin and stdout.
- *
- * The common case by a wide margin: nearly every published MCP server ships as
- * an npx-able command.
- */
+/** A server started as a subprocess and spoken to over its stdin and stdout. */
 export const StdioMcpServer = Schema.Struct({
   transport: Schema.Literal("stdio"),
   command: Schema.String,
@@ -24,13 +15,7 @@ export const StdioMcpServer = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
 });
 
-/**
- * A server reached over HTTP.
- *
- * Bearer tokens and similar go in `headers`, whose values are read from the
- * instance environment rather than stored here — the same rule that keeps API
- * keys out of settings.json applies to anything that authenticates.
- */
+/** A server reached over HTTP. */
 export const HttpMcpServer = Schema.Struct({
   transport: Schema.Literal("http"),
   url: Schema.String,

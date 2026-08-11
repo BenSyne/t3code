@@ -1,13 +1,6 @@
 /**
  * T3AgentDriver — `ProviderDriver` for the built-in agent.
  *
- * Mirrors the other drivers, minus everything to do with a subprocess. There is
- * no binary to locate, no version to probe and no package to update, so this
- * driver asks the runtime for far less than its siblings: no
- * `ChildProcessSpawner`, no `FileSystem`, no `Path`. Every service it does need
- * is already in the server's layer graph, which is why adding an in-process
- * provider requires no new runtime layer.
- *
  * @module provider/Drivers/T3AgentDriver
  */
 import { DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER, T3AgentSettings } from "@t3tools/contracts";
@@ -60,13 +53,7 @@ import { makeT3AgentTextGeneration } from "../../textGeneration/T3AgentTextGener
 const decodeT3AgentSettings = Schema.decodeSync(T3AgentSettings);
 const decodeMcpServer = Schema.decodeUnknownOption(McpServerConfig);
 
-/**
- * Keep the entries that parse, drop the ones that do not.
- *
- * A typo in one server's config should not take the other servers — or the
- * provider — down with it. The dropped ones surface as a warning when the
- * session starts.
- */
+/** Keep the entries that parse, drop the ones that do not. */
 function decodeMcpServers(raw: Record<string, unknown>): McpServers {
   const parsed: Record<string, McpServerConfig> = {};
   for (const [name, value] of Object.entries(raw)) {
@@ -78,15 +65,7 @@ function decodeMcpServers(raw: Record<string, unknown>): McpServers {
   return parsed;
 }
 
-/**
- * What this driver needs from the runtime.
- *
- * `ConductorClient` is the only addition cross-provider orchestration needed,
- * and deliberately so: one narrow service rather than the engine, projections
- * and snapshot store separately, which would make every context that builds a
- * driver stand up all three. Note what is *not* here — `ProviderRegistry`,
- * which builds this driver and so cannot be depended on from inside it.
- */
+/** What this driver needs from the runtime. */
 export type T3AgentDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
   | ServerConfig.ServerConfig

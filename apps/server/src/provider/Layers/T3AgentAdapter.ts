@@ -7,14 +7,12 @@
  * checkpointing, remote access and the clients cannot tell the difference.
  *
  * Three behaviours below look arbitrary and are not. `sendTurn` mints the
- * `TurnId` and stamps it on every event for that turn, because the strict
- * lifecycle guard silently drops turn events whose id disagrees with the
- * tracked active turn — an inconsistent id yields a turn that hangs with
- * nothing in any log. The stale-request `detail` strings are matched by
- * substring upstream to render a friendly "no longer waiting" activity;
- * different wording turns that into a raw error banner. And `sendTurn` returns
- * as soon as the turn is *running*, not when it finishes, because that is what
- * every other adapter does and what the streaming UI expects.
+ * `TurnId` and stamps it on every event, because the lifecycle guard silently
+ * drops turn events whose id disagrees with the tracked active turn. The
+ * stale-request `detail` strings are matched by substring upstream to render a
+ * "no longer waiting" activity; different wording yields a raw error banner.
+ * And `sendTurn` returns once the turn is *running*, not when it finishes,
+ * matching every other adapter and what the streaming UI expects.
  *
  * @module provider/Layers/T3AgentAdapter
  */

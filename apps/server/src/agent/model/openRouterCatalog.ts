@@ -1,28 +1,17 @@
 /**
  * The OpenRouter catalogue, live instead of hand-written.
  *
- * The static list in `ModelCatalog.ts` rots the moment a vendor ships: it held
- * GLM 5.1 while 5.2 was serving traffic, and it will be wrong again next
- * month. OpenRouter publishes its catalogue — public, no key — with release
- * dates, context windows, and which models support tool calling, so "show the
- * newest" can be a rule instead of a maintenance chore.
+ * The static list in `ModelCatalog.ts` rots the moment a vendor ships — it held
+ * GLM 5.1 while 5.2 was serving traffic. OpenRouter publishes release dates,
+ * context windows and tool-calling support, so "show the newest" can be a rule
+ * rather than a maintenance chore.
  *
- * ## What gets shown
- *
- * Two tiers. A short shelf of the newest tool-capable models from the vendors
- * that matter for coding, in a fixed order — this is what the picker opens on,
- * and it maintains itself: a new frontier release surfaces because it is
- * newest, not because someone edits a list. Everything else eligible rides
- * below, reachable by search.
- *
- * Eligibility is strict on one thing: tool calling. An agent cannot run on a
- * model that cannot call `read`, so a model without tool support in the picker
- * is a support ticket, not a choice. Variant suffixes (`:free`, `:extended`)
- * are dropped for the same reason — rate-limited or remixed serving of a model
- * the base slug already offers.
- *
- * The static list stays as the fallback for the first seconds after connect
- * and for when the fetch fails: the picker must never open empty.
+ * Two tiers: a fixed-order shelf of the newest tool-capable models per vendor,
+ * then everything else eligible behind search. Tool calling is required — an
+ * agent cannot run on a model that cannot call `read` — and variant suffixes
+ * (`:free`, `:extended`) are dropped as alternate servings of a listed slug.
+ * The static list still stands in before the first fetch and after a failure,
+ * so the picker never opens empty.
  *
  * @module agent/model/openRouterCatalog
  */

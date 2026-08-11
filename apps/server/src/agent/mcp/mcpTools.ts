@@ -1,12 +1,6 @@
 /**
  * MCP tools as agent tools.
  *
- * The schema an MCP server publishes is raw JSON Schema, which is exactly what
- * a model wants and exactly what `Tool.dynamic` accepts, so nothing has to be
- * re-modelled. Names are prefixed with the server they came from: two servers
- * both offering `search` is common, and silently keeping one would change what
- * the agent does with no way for the user to see why.
- *
  * @module agent/mcp/mcpTools
  */
 import * as Effect from "effect/Effect";
@@ -39,13 +33,7 @@ export function toolsForServer(server: ConnectedServer): ReadonlyArray<AgentTool
   });
 }
 
-/**
- * A contributor over an already-connected pool.
- *
- * Connecting happens once per session, not once per turn: starting a
- * subprocess for every message would be slow and would lose whatever state the
- * server keeps between calls.
- */
+/** A contributor over an already-connected pool. */
 export function mcpContributor(servers: ReadonlyArray<ConnectedServer>): ToolContributor {
   return {
     name: "mcp",

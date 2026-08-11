@@ -1,25 +1,6 @@
 /**
  * Pure builders for the canonical runtime events one turn emits.
  *
- * These are deliberately pure: the only impure inputs — an event id and a
- * timestamp — arrive as an `EventStamp`, so every builder is a total function
- * that can be table-tested without a runtime.
- *
- * Several of the literals here are load-bearing in ways that fail *silently*
- * rather than loudly, which is why they are centralised in one tested file:
- *
- *   - `streamKind: "assistant_text"` is what the ingestion layer gates the
- *     assistant-message fold on. Any other value and the text is accepted,
- *     stored, and never rendered.
- *   - `turnId` must match the id returned from `sendTurn`. The strict
- *     lifecycle guard drops turn events whose id disagrees with the tracked
- *     active turn, with no error anywhere — the symptom is a turn that hangs
- *     forever.
- *
- * `raw` is deliberately omitted. `RuntimeEventRawSource` is a closed union, so
- * attaching a native payload means a contracts change that ripples out to every
- * client decoder. It buys nothing until there is a debug log to attach.
- *
  * @module agent/events/builders
  */
 import type {
@@ -70,12 +51,7 @@ export function turnStartedEvent(
   };
 }
 
-/**
- * One chunk of assistant text.
- *
- * `streamKind` is not a parameter on purpose — this builder exists so the
- * literal is written once, in a place a test can pin.
- */
+/** One chunk of assistant text. */
 export function assistantTextDeltaEvent(
   ctx: TurnContext & { readonly delta: string },
 ): ProviderRuntimeEvent {
@@ -87,12 +63,7 @@ export function assistantTextDeltaEvent(
   };
 }
 
-/**
- * One chunk of the model's reasoning.
- *
- * Separate from assistant text so the client can collapse it. Sharing the
- * builder and passing a `streamKind` would put the two literals one typo apart.
- */
+/** One chunk of the model's reasoning. */
 export function reasoningDeltaEvent(
   ctx: TurnContext & { readonly delta: string },
 ): ProviderRuntimeEvent {
@@ -104,13 +75,7 @@ export function reasoningDeltaEvent(
   };
 }
 
-/**
- * The envelope around a run of assistant text.
- *
- * Deltas alone leave the client guessing where one message ends and the next
- * begins, which matters here because a turn produces several: one per step,
- * separated by tool calls.
- */
+/** The envelope around a run of assistant text. */
 export function assistantMessageItemEvent(
   ctx: TurnContext & {
     readonly itemId: RuntimeItemId;
@@ -129,12 +94,7 @@ export function assistantMessageItemEvent(
   };
 }
 
-/**
- * A tool call appearing, updating, or finishing.
- *
- * `itemId` is the model's own tool-call id, so the started and completed events
- * refer to the same timeline row without us inventing a correlation key.
- */
+/** A tool call appearing, updating, or finishing. */
 export function toolItemEvent(
   ctx: TurnContext & {
     readonly itemId: RuntimeItemId;
@@ -161,12 +121,7 @@ export function toolItemEvent(
   };
 }
 
-/**
- * The agent is waiting for a human.
- *
- * `requestType` is what the client keys its approval UI on, so a command and a
- * file change get the prompt each deserves.
- */
+/** The agent is waiting for a human. */
 export function requestOpenedEvent(
   ctx: TurnContext & {
     readonly requestId: RuntimeRequestId;
@@ -214,12 +169,7 @@ export function tokenUsageEvent(
   };
 }
 
-/**
- * Something went wrong that the turn survived.
- *
- * A shadowed tool name, an MCP server that would not start. These belong in
- * front of the user but must never be mistaken for a failed turn.
- */
+/** Something went wrong that the turn survived. */
 export function runtimeWarningEvent(
   ctx: EventContext & { readonly message: string },
 ): ProviderRuntimeEvent {

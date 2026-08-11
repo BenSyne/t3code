@@ -1,11 +1,6 @@
 /**
  * What a tool says when it cannot do the thing.
  *
- * Tool failures are read by the model, not by a developer, so they are one
- * plain sentence telling it what happened and what to try instead. The rich
- * internal error stays on the server: a stack trace in the transcript teaches
- * the model nothing and costs tokens on every subsequent step.
- *
  * @module agent/tools/failure
  */
 import * as Schema from "effect/Schema";
@@ -16,13 +11,7 @@ export class ToolFailure extends Schema.TaggedErrorClass<ToolFailure>()("ToolFai
 
 export const toolFailure = (message: string): ToolFailure => new ToolFailure({ message });
 
-/**
- * Describe a filesystem problem in terms the model can act on.
- *
- * Node's `errno` codes are the reliable signal; the message attached to a
- * `PlatformError` varies by platform and often embeds an absolute path we would
- * rather not echo back.
- */
+/** Describe a filesystem problem in terms the model can act on. */
 export function describeFileSystemFailure(input: {
   readonly cause: unknown;
   readonly displayPath: string;

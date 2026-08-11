@@ -1,24 +1,6 @@
 /**
  * Connections to the user's MCP servers.
  *
- * One pool per agent instance, holding one connection per configured server.
- * The rule that shapes everything here: **a broken MCP server must never break
- * a turn.** Third-party servers are the least reliable thing in the loop — they
- * are other people's subprocesses — so every failure path ends in a warning and
- * zero tools, never in a failed effect.
- *
- * Byte caps exist for the same reason. A server that returns a megabyte of JSON
- * would otherwise spend the user's context and money on one tool call.
- *
- * ## Why there is no MCP dependency here
- *
- * MCP's stdio transport is JSON-RPC 2.0 as newline-delimited JSON, and this
- * agent uses three of its methods. Taking the official SDK would add a package
- * to a repository whose selling point for this feature is that it added none,
- * to save well-specified framing. Resources, prompts, sampling, and OAuth are
- * out of scope — a server needing them is unsupported rather than
- * half-supported, and says so.
- *
  * @module agent/mcp/McpClientPool
  */
 import * as Deferred from "effect/Deferred";
@@ -76,11 +58,7 @@ export interface McpPool {
 
 export const EMPTY_POOL: McpPool = { servers: [], statuses: [] };
 
-/**
- * Connect to every enabled server, tolerating any that will not come up.
- *
- * Returns what did connect plus a status per server. Never fails.
- */
+/** Connect to every enabled server, tolerating any that will not come up. */
 export const connectAll = Effect.fnUntraced(function* (input: {
   readonly servers: McpServers;
   readonly spawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
@@ -253,12 +231,7 @@ const decodeJson = Schema.decodeUnknownSync(JsonLine);
 /** Encoding is total here: every value written is one we just constructed. */
 const encodeJson = Schema.encodeSync(JsonLine);
 
-/**
- * A line the server sent.
- *
- * Anything unparseable is dropped rather than raised: servers write progress
- * chatter and log lines to stdout, and one of those must not kill the reader.
- */
+/** A line the server sent. */
 function parseResponse(line: string): JsonRpcResponse | null {
   if (line.trim() === "") {
     return null;

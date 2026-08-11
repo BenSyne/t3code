@@ -1,18 +1,6 @@
 /**
  * Replacing old conversation with a summary of it.
  *
- * Compaction is the difference between an agent that works for an hour and one
- * that stops mid-task with a context-length error. It is also lossy by
- * definition, so the prompt below asks for the things a coding session actually
- * needs carried forward — decisions, file paths, what is still unfinished —
- * rather than a readable précis.
- *
- * ## Failure is a value, not a defect
- *
- * If summarising fails, the turn continues on the un-compacted conversation and
- * says so. `Effect.die` here would turn a recoverable "the summary call failed"
- * into a lost turn, and the user would lose work over an optimisation.
- *
  * @module agent/compaction/summarize
  */
 import * as Effect from "effect/Effect";
@@ -45,12 +33,7 @@ export type CompactionOutcome =
   /** The summary call failed. The caller keeps the original conversation. */
   | { readonly _tag: "Failed"; readonly detail: string };
 
-/**
- * Compact a conversation.
- *
- * Never fails: every outcome is a value the caller can act on, including the
- * one where the model would not co-operate.
- */
+/** Compact a conversation. */
 export const compactPrompt = Effect.fnUntraced(function* (input: {
   readonly prompt: Prompt.Prompt;
   readonly preserveTokens: number;

@@ -2,11 +2,6 @@
 /**
  * Write a whole file.
  *
- * Creates parent directories, because a model that has decided where a new
- * module goes should not have to also ask for `mkdir`. Overwrites without
- * ceremony — the guard against a destructive write is the approval gate in
- * front of the tool, not a heuristic inside it.
- *
  * @module agent/tools/fs/write
  */
 import * as NodePath from "node:path";

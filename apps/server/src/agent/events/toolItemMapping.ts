@@ -1,14 +1,6 @@
 /**
  * How a tool call looks in the timeline.
  *
- * T3 Code's UI does not render "a tool ran" — it renders a *command*, a *file
- * change*, a *search*. Those are `CanonicalItemType`s, and picking the right one
- * is what decides whether a `bash` call shows up as a terminal block with its
- * output or as an anonymous grey box. Getting it wrong is silent: the item is
- * stored, it is just rendered as nothing in particular.
- *
- * Pure, so the whole mapping can be table-tested without a model.
- *
  * @module agent/events/toolItemMapping
  */
 import type { CanonicalItemType } from "@t3tools/contracts";
@@ -21,13 +13,7 @@ export interface ToolItemDescriptor {
   readonly data?: Record<string, unknown> | undefined;
 }
 
-/**
- * Describe a call the model just made.
- *
- * The core tools are named explicitly because their parameters are known and a
- * good title can be built from them. Everything else — MCP, skills, anything
- * added later — falls through to a generic description rather than a wrong one.
- */
+/** Describe a call the model just made. */
 export function describeToolCall(input: {
   readonly toolName: string;
   readonly params: unknown;
@@ -74,13 +60,7 @@ export interface ToolResultDescriptor {
   readonly detail?: string | undefined;
 }
 
-/**
- * Describe how the call ended.
- *
- * A tool that returned a `ToolFailure` is a *failed item*, not a completed one
- * carrying bad news — otherwise the timeline shows a tick next to something that
- * did not work.
- */
+/** Describe how the call ended. */
 export function describeToolResult(input: {
   readonly toolName: string;
   readonly result: unknown;

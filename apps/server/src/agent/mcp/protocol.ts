@@ -1,20 +1,6 @@
 /**
  * The bits of MCP this agent needs, and nothing more.
  *
- * MCP is JSON-RPC 2.0 over a stream. We use three calls — `initialize`,
- * `tools/list`, `tools/call` — so what lives here is request construction and
- * response decoding; the framing and the process are `McpClientPool`'s.
- *
- * The message shapes are *not* hand-written. `effect/unstable/ai/McpSchema`
- * already defines them, and T3 Code's own MCP server is built on it, so
- * modelling them again here would mean two descriptions of one protocol in one
- * repository, drifting apart at whatever rate the spec moves. An earlier
- * version of this file did exactly that, justified as avoiding a dependency
- * that was in fact already installed.
- *
- * Resources, prompts, sampling and OAuth stay out of scope; a server needing
- * them is unsupported rather than half-supported.
- *
  * @module agent/mcp/protocol
  */
 import * as Schema from "effect/Schema";
@@ -67,26 +53,12 @@ export function callToolRequest(id: number, name: string, args: unknown): JsonRp
   return { jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } };
 }
 
-/**
- * Just enough of the envelope to find the tools.
- *
- * Deliberately looser than `McpSchema.ListToolsResult`, which also models
- * pagination and metadata we neither send nor read. Decoding against the full
- * result would reject a server over a `nextCursor` we were going to ignore.
- */
+/** Just enough of the envelope to find the tools. */
 const ToolListEnvelope = Schema.Struct({ tools: Schema.Array(Schema.Unknown) });
 const decodeEnvelope = Schema.decodeUnknownOption(ToolListEnvelope);
 const decodeTool = Schema.decodeUnknownOption(McpSchema.Tool);
 
-/**
- * A tool result's envelope, with its blocks left undecoded.
- *
- * The same split as the tool list, for the same reason. Decoding the full
- * `McpSchema.CallToolResult` means one imperfect block — an image missing its
- * `mimeType`, say — discards the whole result including the text blocks that
- * were fine, and the model is told the tool was unreadable when most of it
- * was not. Blocks are handled one at a time below.
- */
+/** A tool result's envelope, with its blocks left undecoded. */
 const CallResultEnvelope = Schema.Struct({
   content: Schema.Array(Schema.Unknown),
   isError: Schema.optional(Schema.Boolean),
@@ -100,19 +72,7 @@ export type ToolListOutcome =
   | { readonly _tag: "Tools"; readonly tools: ReadonlyArray<McpToolDescriptor> }
   | { readonly _tag: "Unreadable"; readonly reason: string };
 
-/**
- * Read the tool list, strict about the envelope and forgiving about entries.
- *
- * The two halves fail differently on purpose. A response with no `tools` array
- * is a server we cannot talk to, and the old code turned that into an empty
- * catalogue — indistinguishable from a server that legitimately offers nothing,
- * which is how a broken connection came to look like a working one. That is
- * now `Unreadable`, and the caller warns with the server's name.
- *
- * One malformed entry among good ones is different: it costs that tool and
- * nothing else. Losing a whole server's catalogue because it advertised one
- * tool we could not parse would be the wrong trade.
- */
+/** Read the tool list, strict about the envelope and forgiving about entries. */
 export function parseToolList(result: unknown): ToolListOutcome {
   const envelope = decodeEnvelope(result);
   if (envelope._tag === "None") {
@@ -139,17 +99,7 @@ export function parseToolList(result: unknown): ToolListOutcome {
   return { _tag: "Tools", tools };
 }
 
-/**
- * Flatten a `tools/call` result into text.
- *
- * MCP returns a list of content blocks. The model reads text, so other blocks
- * are named rather than embedded — "[image content]" is more useful than
- * silently dropping it or spending the context window on base64.
- *
- * An undecodable result is reported as an error rather than as empty output,
- * because a tool that answered with nothing and a tool that answered with
- * nonsense call for different reactions from the model.
- */
+/** Flatten a `tools/call` result into text. */
 export function renderToolResult(result: unknown): {
   readonly text: string;
   readonly isError: boolean;

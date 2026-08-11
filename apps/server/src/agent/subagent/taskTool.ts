@@ -1,19 +1,6 @@
 /**
  * The `task` tool: hand a self-contained job to a fresh agent.
  *
- * Worth having for one reason — context. A search that reads forty files to
- * find three costs the main conversation forty files' worth of context whether
- * or not they mattered. A sub-agent reads them in its own conversation and
- * returns a paragraph.
- *
- * ## The depth cap is not optional
- *
- * A sub-agent with a `task` tool can spawn a sub-agent. Without a cap that is
- * an unbounded fan-out of paid API calls, started by a model, on a user's key,
- * and the first they would know is the bill. Children are created at depth + 1
- * and lose the tool entirely at the cap, so the recursion cannot continue even
- * if a model tries.
- *
  * @module agent/subagent/taskTool
  */
 import type { ThreadId, TurnId } from "@t3tools/contracts";
@@ -64,25 +51,14 @@ const TaskTool = Tool.make("task", {
 export interface SubagentContext {
   /** How deep the *current* agent is. Children run at one more. */
   readonly depth: number;
-  /**
-   * Read when the tool runs, not when it is built.
-   *
-   * The prompt names the tools available, and the tools include this one, so
-   * taking it by value here is a cycle — and one that only shows up at runtime,
-   * as a "cannot access before initialization" on the first turn.
-   */
+  /** Read when the tool runs, not when it is built. */
   readonly systemPrompt: () => string;
   /**
    * Read when the tool runs, like the model layer below: it must describe the
    * model the parent is using *now*, not the one it started with.
    */
   readonly contextWindow: () => number | null;
-  /**
-   * Build the child's tools at the given depth.
-   *
-   * A function rather than a value because the child's toolkit differs from the
-   * parent's: at the cap it must not contain `task`.
-   */
+  /** Build the child's tools at the given depth. */
   readonly toolkitForDepth: (depth: number) => Effect.Effect<AgentToolkit>;
   /**
    * The model the child talks to — whichever one the parent is using when the
@@ -94,12 +70,7 @@ export interface SubagentContext {
   /** Reports the child's progress into the parent's timeline. */
   readonly emitter: TurnEmitter;
   readonly threadId: ThreadId;
-  /**
-   * Read when the tool runs, not when it is built.
-   *
-   * A sub-agent runs inside its parent's turn, and that turn's id is only known
-   * once the turn starts — long after the toolkit was assembled.
-   */
+  /** Read when the tool runs, not when it is built. */
   readonly resolveTurnId: () => TurnId | undefined;
   readonly isInterrupted: () => boolean;
 }
@@ -149,13 +120,7 @@ export function makeTaskTool(context: SubagentContext): AgentTool {
   );
 }
 
-/**
- * Contributed only below the cap.
- *
- * Absent rather than present-and-refusing at the deepest level: a tool the
- * model can see is a tool it will try, and spending a step to be told no is
- * worse than never offering it.
- */
+/** Contributed only below the cap. */
 export function subagentContributor(context: SubagentContext): ToolContributor {
   return {
     name: "subagent",

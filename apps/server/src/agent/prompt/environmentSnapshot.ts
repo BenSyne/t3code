@@ -1,21 +1,6 @@
 /**
  * What the orchestrator knows about its fleet before the first word is typed.
  *
- * Without this the agent starts every session blind: the tools could answer
- * "which agents exist, what do they cost, what is stuck" — but only if the
- * model decides to spend steps asking. On a greeting turn it never does, so
- * the thing sold as an orchestrator opens the conversation knowing nothing
- * about the room. One snapshot at session start fixes the posture: the first
- * reply can already speak to what is configured, what is running, and what is
- * blocked waiting on a person.
- *
- * A snapshot, not a subscription — it is stale the moment a thread moves, and
- * says so, pointing at the listing tools for current state.
- *
- * Fail-soft by design: the snapshot is a nicety and session start is not
- * allowed to hang or die on a projection. Anything slow or broken returns
- * null and the session starts without it.
- *
  * @module agent/prompt/environmentSnapshot
  */
 import * as Effect from "effect/Effect";

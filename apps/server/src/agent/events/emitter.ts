@@ -1,11 +1,6 @@
 /**
  * Stamping and queueing for runtime events.
  *
- * The builders in `builders.ts` are pure; this is where the impure half lives —
- * minting an id, reading the clock, and putting the result on the stream the
- * adapter exposes. Keeping it here means the adapter names *what* happened and
- * never repeats the mechanics of saying so.
- *
  * @module agent/events/emitter
  */
 import type {

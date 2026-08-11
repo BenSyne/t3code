@@ -1,15 +1,6 @@
 /**
  * Tools for running other agents.
  *
- * From a phone: "review this PR with Codex and Claude in parallel and tell me
- * where they disagree." Both threads appear in the sidebar, stream live, and
- * stay independently inspectable, interruptible, and revertable — because they
- * are ordinary threads, started through the ordinary command path.
- *
- * Every tool here goes through {@link OrchestrationClient}. None of them
- * imports the provider service or the decider, which is the property that keeps
- * this an integration rather than a back door.
- *
  * @module agent/conductor/conductorTools
  */
 import {
@@ -91,16 +82,7 @@ const listProviders = (context: ConductorContext): AgentTool =>
       })),
   );
 
-/**
- * What an instance can actually be pointed at.
- *
- * Its own tool rather than a field on `list_providers`, because a workspace
- * with a couple of aggregator instances has hundreds of models between them
- * and "who can I delegate to" is asked far more often than "and on which
- * model". This is the call that stops the agent guessing a slug: before it
- * existed, asked which model to use it either invented a plausible name or
- * hedged about what the user's picker showed, having no way to look.
- */
+/** What an instance can actually be pointed at. */
 const listModels = (context: ConductorContext): AgentTool =>
   defineTool(
     Tool.make("list_models", {
@@ -173,18 +155,7 @@ const listProjects = (context: ConductorContext): AgentTool =>
       })),
   );
 
-/**
- * The threads worth looking at, most in need of someone first.
- *
- * A cap rather than the lot: a long-lived project accumulates hundreds, the
- * agent almost always wants the recent ones, and quietly returning everything
- * would spend the context window on threads from months ago. When the cap
- * bites, the result says so — a truncated list that claims to be complete is
- * how an agent concludes something does not exist.
- *
- * Ordered by `orderForAttention` rather than by time, so the cap can never be
- * what hides a thread that is blocked waiting for an answer.
- */
+/** The threads worth looking at, most in need of someone first. */
 const THREAD_LIST_LIMIT = 40;
 
 const listThreads = (context: ConductorContext): AgentTool =>
@@ -432,17 +403,7 @@ const readDelegated = (context: ConductorContext): AgentTool =>
     }),
   );
 
-/**
- * Moving a thread around the user's inbox.
- *
- * One tool for eight verbs. They are the same act — deciding whether the user
- * still has to look at something — and eight separate descriptions would be
- * charged on every request of every turn to say that eight times.
- *
- * No ownership check, deliberately. Tidying an inbox means tidying the threads
- * that are in it, not the subset this agent happens to have started, and every
- * action here is reversible by the inverse verb sitting next to it.
- */
+/** Moving a thread around the user's inbox. */
 const setThreadState = (context: ConductorContext): AgentTool =>
   defineTool(
     Tool.make("set_thread_state", {
@@ -537,14 +498,7 @@ const renameThread = (context: ConductorContext): AgentTool =>
     }),
   );
 
-/**
- * A follow-up on a thread that already exists.
- *
- * Without this, delegation was one-shot: `delegate_to_agent` always mints a new
- * thread, so "tell Codex it got that null check wrong" meant starting again
- * with none of the context the correction depends on. Supervising work is the
- * point of orchestrating it, and supervision is a second message.
- */
+/** A follow-up on a thread that already exists. */
 const sendToThread = (context: ConductorContext): AgentTool =>
   defineTool(
     Tool.make("send_to_thread", {
@@ -616,16 +570,7 @@ const sendToThread = (context: ConductorContext): AgentTool =>
     }),
   );
 
-/**
- * Answering a question a delegated thread is stuck on.
- *
- * Restricted to threads this agent started, and — unlike the claim that used to
- * sit on `stop_delegated_thread` — actually enforced. The distinction is real:
- * settling or stopping a thread is neutral and reversible, while an answer is
- * put into the user's mouth and acted on. In a thread the agent wrote the task
- * for, it is the best-placed party to say what it meant. In one it has never
- * seen, it would be guessing on someone else's behalf.
- */
+/** Answering a question a delegated thread is stuck on. */
 const answerQuestion = (context: ConductorContext): AgentTool =>
   defineTool(
     Tool.make("answer_thread_question", {
@@ -826,13 +771,7 @@ const revertDelegated = (context: ConductorContext): AgentTool =>
     }),
   );
 
-/**
- * Answering an approval on another thread.
- *
- * Contributed only when explicitly enabled. Absent otherwise rather than
- * present-and-refusing, so the model never learns that approving is something
- * it might be able to do.
- */
+/** Answering an approval on another thread. */
 const approveRequest = (context: ConductorContext): AgentTool =>
   defineTool(
     Tool.make("approve_delegated_request", {
@@ -863,19 +802,7 @@ const approveRequest = (context: ConductorContext): AgentTool =>
     }),
   );
 
-/**
- * Three thread commands exist and are deliberately not offered here.
- *
- * `thread.delete` is the only one of these with no inverse. Everything else the
- * agent can do to a thread is undone by the verb next to it; a deletion is
- * gone, and there is no checkpoint to walk it back. That is a decision for the
- * person whose work it was.
- *
- * `thread.runtime-mode.set` and `thread.interaction-mode.set` change how much
- * another thread is allowed to do without asking. An agent that can raise a
- * thread's permissions has escalated its own by starting work there afterwards,
- * and no fleet limit catches that — the limit counts threads, not authority.
- */
+/** Three thread commands exist and are deliberately not offered here. */
 export function conductorContributor(context: ConductorContext | null): ToolContributor {
   return {
     name: "conductor",

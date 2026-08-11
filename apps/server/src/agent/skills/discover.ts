@@ -2,18 +2,6 @@
 /**
  * Finding the skills available in a project.
  *
- * Looks in the places the ecosystem already puts them, so a folder written for
- * another agent works here with no changes. Project skills beat global ones of
- * the same name: a repository that ships a skill has decided how that name
- * should behave inside it.
- *
- * ## Progressive disclosure
- *
- * Only the name and description of each skill go into the system prompt. The
- * body — which can be thousands of words — is loaded by the `skill` tool when
- * the model decides to use it. Ten skills therefore cost ten lines of context,
- * not ten documents.
- *
  * @module agent/skills/discover
  */
 import * as NodeFSP from "node:fs/promises";
@@ -28,25 +16,13 @@ export interface DiscoveredSkill {
   /** Absolute path to the `SKILL.md`, so the tool can read the body later. */
   readonly location: string;
   readonly scope: "project" | "global";
-  /**
-   * The instructions, when they are compiled in rather than on disk.
-   *
-   * Built-in knowledge has no file to read — and must not, because a packaged
-   * build has no repository to read it from.
-   */
+  /** The instructions, when they are compiled in rather than on disk. */
   readonly body?: string | undefined;
 }
 
 export interface SkillDiscovery {
   readonly skills: ReadonlyArray<DiscoveredSkill>;
-  /**
-   * Files that looked like skills but could not be read.
-   *
-   * Carries `scope` because it decides who hears about it. A malformed skill
-   * in the project is about the work at hand and worth surfacing; one in the
-   * home directory belongs to some other tool's setup, and repeating it in
-   * every thread of every project is noise the user cannot act on from here.
-   */
+  /** Files that looked like skills but could not be read. */
   readonly rejected: ReadonlyArray<{
     readonly path: string;
     readonly reason: string;
@@ -65,11 +41,7 @@ const MAX_DEPTH = 3;
 /** Enough for any real project; a cap stops a pathological tree from hanging a turn. */
 const MAX_SKILLS = 100;
 
-/**
- * Discover every skill visible from this workspace.
- *
- * Never fails. A directory that cannot be read contributes nothing.
- */
+/** Discover every skill visible from this workspace. */
 export const discoverSkills = Effect.fnUntraced(function* (input: {
   readonly workspaceRoot: string;
   readonly homeDirectory: string;
@@ -106,12 +78,7 @@ export const discoverSkills = Effect.fnUntraced(function* (input: {
   } satisfies SkillDiscovery;
 });
 
-/**
- * The block that goes into the system prompt.
- *
- * One line per skill. This is the entire context cost of having skills
- * available, which is what makes it reasonable to have many.
- */
+/** The block that goes into the system prompt. */
 export function skillCatalogBlock(skills: ReadonlyArray<DiscoveredSkill>): string {
   if (skills.length === 0) {
     return "";

@@ -1,28 +1,17 @@
 /**
  * One turn: ask the model, run what it asked for, ask again, until it is done.
  *
- * This is the file to read to understand the agent. Everything else in
- * `agent/` exists to keep this one readable — the stopping rule is in
- * `stepPolicy`, the event vocabulary in `events/`, the tools behind a registry —
- * so that the shape of a turn fits on a screen and says what it does.
- *
- * ## The loop
- *
- * A *step* is one request to the model. The model streams back text, reasoning,
- * and tool calls; the AI stack runs the tools and streams their results. If the
+ * A *step* is one request to the model. It streams back text, reasoning and
+ * tool calls; the AI stack runs the tools and streams their results. If the
  * step asked for tools, their results go into the prompt and we take another
- * step. If it did not, the model has answered and the turn is over.
+ * step. If not, the model has answered and the turn is over.
  *
- * ## Two things that are easy to get wrong
- *
- * The prompt is rebuilt from the response *parts*, not from the text we
- * rendered. Tool calls and their results have to be in the history verbatim or
- * the next request is malformed, and providers reject it in ways that read like
- * a model failure rather than a bug here.
- *
- * A tool that throws — not fails, throws — must not take the turn with it. Tools
- * are built `failureMode: "return"`, and `Effect.catchDefect` at the turn
- * boundary catches what that does not.
+ * Two things that are easy to get wrong. The prompt is rebuilt from the
+ * response *parts*, not the text we rendered — tool calls and their results
+ * must be in the history verbatim or the next request is malformed, and
+ * providers reject it in ways that read like a model failure. And a tool that
+ * *throws* must not take the turn with it: tools are built
+ * `failureMode: "return"`, and `Effect.catchDefect` catches what that does not.
  *
  * @module agent/loop/runTurn
  */

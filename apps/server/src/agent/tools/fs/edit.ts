@@ -1,12 +1,6 @@
 /**
  * Change part of a file by exact string replacement.
  *
- * Exact, not fuzzy, and ambiguity is an error rather than a guess. If
- * `oldString` appears twice and the model did not say `replaceAll`, we refuse
- * and say how many times it matched: a tool that silently picks the first
- * occurrence will eventually edit the wrong one, and the model has no way to
- * find out that it did.
- *
  * @module agent/tools/fs/edit
  */
 import * as Effect from "effect/Effect";
@@ -96,13 +90,7 @@ export type EditOutcome =
   | { readonly _tag: "Ambiguous"; readonly occurrences: number }
   | { readonly _tag: "Unchanged" };
 
-/**
- * Apply the replacement, or explain why it was refused.
- *
- * Pure, and separately tested, because every failure mode here is one the model
- * will hit: whitespace that does not match, a string that appears twice, an
- * edit that would change nothing.
- */
+/** Apply the replacement, or explain why it was refused. */
 export function applyEdit(input: {
   readonly content: string;
   readonly oldString: string;

@@ -1,15 +1,6 @@
 /**
  * What the agent is told before it is told anything else.
  *
- * Kept short on purpose. A long system prompt is charged on every request of
- * every step of every turn, and past a certain length models follow it *less*,
- * not more. Everything here earns its place by changing behaviour we have a
- * reason to want changed.
- *
- * Model-specific coaching deliberately stays out. This prompt ships to Claude,
- * GPT, Gemini, Kimi, DeepSeek, and whatever the user points at a local port, and
- * instructions tuned to one of them are noise to the rest.
- *
  * @module agent/prompt/systemPrompt
  */
 
@@ -68,27 +59,12 @@ headings, no bullet lists, unless what you are reporting is genuinely a list.
 Length is not thoroughness. A skill you loaded is written long so it can be
 complete; that is not a model for how to reply.`;
 
-/**
- * The tool whose presence means orchestration is switched on for this instance.
- *
- * Detected from the toolkit rather than passed in as a flag: the toolkit is
- * already the authority on what this turn can do, and a second source would
- * eventually disagree with it.
- */
+/** The tool whose presence means orchestration is switched on for this instance. */
 const DELEGATION_TOOL = "delegate_to_agent";
 
 /**
  * Said every turn rather than left to a skill, because it changes what the
  * agent *reaches for* rather than what it knows.
- *
- * The tool descriptions already reach the model in full, so nothing here
- * restates them — a list would be tokens spent on every request to repeat what
- * every request already carries, and one more copy to go stale. What the
- * schemas cannot say is the doctrine: that delegating is ordinary, which work
- * goes to which kind of capacity, and that a launched thread is a
- * responsibility rather than a result. That is invisible from the tools alone,
- * and it is the difference between an orchestrator and a chatbot with a
- * delegation button.
  */
 const ORCHESTRATION = `You can also run the other coding agents configured in this app, and doing so is
 ordinary rather than a last resort. You are the orchestrator: routing work well
@@ -111,13 +87,7 @@ Run the fleet rather than merely launching it:
   agent says it did and what it did are different claims. Nothing notifies you
   when a delegated thread finishes, so check.`;
 
-/**
- * Assemble the prompt.
- *
- * Order matters: the fixed instructions first, the user's project instructions
- * after, so a project can add to the defaults and — where it disagrees — win by
- * being the last thing read.
- */
+/** Assemble the prompt. */
 export function buildSystemPrompt(input: SystemPromptInput): string {
   const sections = [BASE, `Working directory: ${input.workspaceRoot}`];
 

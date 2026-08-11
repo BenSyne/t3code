@@ -2,10 +2,6 @@
 /**
  * The `skill` tool: load a skill's instructions on demand.
  *
- * The other half of progressive disclosure. The system prompt lists what is
- * available in one line each; this returns the full document when the model
- * decides it needs one.
- *
  * @module agent/skills/skillTool
  */
 import * as NodeFSP from "node:fs/promises";

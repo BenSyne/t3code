@@ -2,14 +2,11 @@
  * One conversation with the built-in agent.
  *
  * A session owns the per-thread state a turn needs: the wire-visible
- * `ProviderSession` record, the resolved language model, the tools that turn may
- * call, and the running conversation. It deliberately knows nothing about the
- * provider adapter that holds it — the adapter maps sessions to the T3 Code
- * contract, this maps them to a model.
+ * `ProviderSession` record, the resolved language model, the tools that turn
+ * may call, and the running conversation. It knows nothing about the provider
+ * adapter that holds it.
  *
- * The turn itself lives in `runTurn.ts`. This file is the state it acts on, kept
- * separate so the loop can be read without the bookkeeping and the bookkeeping
- * can be changed without touching the loop.
+ * The turn itself lives in `runTurn.ts`; this is the state it acts on.
  *
  * @module agent/loop/AgentSession
  */
@@ -27,12 +24,7 @@ import type { AgentToolkit } from "../tools/registry.ts";
 export interface CompletedTurn {
   readonly id: TurnId;
   readonly items: ReadonlyArray<unknown>;
-  /**
-   * How many messages the conversation held before this turn began.
-   *
-   * Rollback truncates to this, which is what makes it exact rather than
-   * approximate: we own the history instead of asking a provider to rewind it.
-   */
+  /** Rollback truncates to this, which is exact because we own the history. */
   readonly promptLengthBefore: number;
 }
 
@@ -40,20 +32,17 @@ export interface AgentSessionContext {
   /** The wire-visible record. Replaced in place as status changes. */
   session: ProviderSession;
   /**
-   * Mutable, together with the three fields below, because this adapter
-   * advertises in-session model switching: T3 Code deliberately keeps the
-   * session alive across a model change and trusts the next turn to honour
-   * the new selection. Swap them only through `applyModelChoice`, which keeps
-   * the four consistent — a layer built for one model under another's name
-   * would misreport cost and context for every following turn.
+   * Mutable, with the three fields below, because this adapter advertises
+   * in-session model switching. Swap them only through `applyModelChoice` — a
+   * layer built for one model under another's name misreports cost and context
+   * for every following turn.
    */
   model: string;
-  /** How hard the model is asked to think, or undefined for its own default. */
   reasoningEffort: ReasoningEffort | undefined;
   /**
-   * A ready-to-use model. `HttpClient` is provided once when the session is
-   * created, not per turn, so running a turn requires nothing further — which
-   * is what lets the loop be tested against a stub with no transport at all.
+   * `HttpClient` is provided once at session creation, not per turn, so running
+   * a turn requires nothing further — which is what lets the loop be tested
+   * against a stub with no transport.
    */
   modelLayer: Layer.Layer<LanguageModel.LanguageModel>;
   /** Absolute path every tool in this session is confined to. */
@@ -68,26 +57,18 @@ export interface AgentSessionContext {
   /** One-shot teardown latch, so stopping twice is a no-op. */
   stopped: boolean;
   /**
-   * Set by `interruptTurn`, read by the loop between steps.
+   * Set by `interruptTurn`, read by the loop between steps — a flag rather than
+   * a fiber interrupt so a stopped turn keeps the work it already finished.
    *
-   * A flag rather than a fiber interrupt, so a stopped turn keeps the work it
-   * already finished: the loop notices between steps and returns the tool
-   * results and text it has, rather than throwing the step away.
-   *
-   * That is the right default and a bad only option. A step that never
-   * finishes — a provider holding a stream open, a model generating without
-   * end — never reaches the check, so Stop appears to do nothing and there is
-   * no way out. See `interruptRequests`.
+   * A step that never finishes never reaches the check, which is why
+   * `interruptRequests` exists.
    */
   interrupted: boolean;
   /**
-   * How many times the user has asked for this turn to stop.
-   *
-   * Asking twice means "I do not care about a tidy ending, stop it", and the
-   * adapter interrupts the fiber on the second ask. Safe because the running
-   * step's parts are local to the loop and only reach the conversation when it
-   * returns normally — an abandoned step leaves the user's message with no
-   * reply, which is well-formed, rather than a tool call with no result.
+   * A second ask means "stop it", and the adapter interrupts the fiber. Safe
+   * because a running step's parts only reach the conversation on a normal
+   * return: an abandoned step leaves a user message with no reply, which is
+   * well-formed, rather than a tool call with no result.
    */
   interruptRequests: number;
   /** The turn in flight, if any. */
@@ -131,13 +112,11 @@ export interface ModelChoice {
 }
 
 /**
- * Switch what the session talks to, atomically from the loop's point of view.
+ * Switch what the session talks to. Called between turns, never during one.
  *
- * Called between turns, never during one — the running turn holds its own
- * references. The wire-visible record is updated too, because the orchestrator
- * compares `session.model` against the requested selection to decide whether a
- * change happened; leaving it stale would make it restart sessions this
- * adapter is built to keep.
+ * The wire-visible record is updated too: the orchestrator compares
+ * `session.model` against the requested selection to decide whether a change
+ * happened, so leaving it stale restarts sessions this adapter keeps alive.
  */
 export function applyModelChoice(
   context: AgentSessionContext,

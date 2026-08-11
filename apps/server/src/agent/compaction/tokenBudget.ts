@@ -1,22 +1,6 @@
 /**
  * When the conversation is too long, and how much of it to keep.
  *
- * Pure arithmetic, separated from the summarising because these are the numbers
- * that decide whether the agent forgets something it needed. They are worth
- * being able to test directly and change deliberately.
- *
- * ## Where the numbers come from
- *
- * The shape of this calculation follows OpenCode's, which is MIT-licensed and
- * has the advantage of having been run against real conversations for a long
- * time. Guessing here produces two bad outcomes that are hard to notice: compact
- * too late and requests start failing outright, compact too eagerly and the
- * agent keeps losing context it was about to use.
- *
- * The reserve exists because the context limit covers input *and* output. Filling
- * the window with history leaves no room for the reply, and the request fails
- * with an error that reads like a provider problem.
- *
  * @module agent/compaction/tokenBudget
  */
 
@@ -36,13 +20,7 @@ export interface ContextBudget {
   readonly preserve: number;
 }
 
-/**
- * Work out the budget for a model.
- *
- * A context window of zero or null means we do not know it. Then the budget is
- * zero and {@link shouldCompact} always says no: compacting on a guess would
- * throw away real conversation for no reason we can justify.
- */
+/** Work out the budget for a model. */
 export function contextBudget(contextWindow: number | null): ContextBudget {
   if (contextWindow === null || contextWindow <= 0) {
     return { usable: 0, preserve: 0 };
@@ -66,25 +44,12 @@ export function shouldCompact(input: {
   return budget.usable > 0 && input.usedTokens >= budget.usable;
 }
 
-/**
- * A rough token count for a piece of text.
- *
- * Four characters per token is the usual English approximation. It is wrong for
- * code and wrong for other languages, which is why it is only used to decide
- * *where* to cut the history — the authoritative number always comes from the
- * provider's own usage report.
- */
+/** A rough token count for a piece of text. */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-/**
- * Split messages into the part to summarise and the part to keep verbatim.
- *
- * Walks backwards from the newest message until the preserve budget is spent.
- * The system message is never summarised — it is instructions, not history, and
- * losing it changes how the agent behaves for the rest of the conversation.
- */
+/** Split messages into the part to summarise and the part to keep verbatim. */
 export function splitForCompaction<T extends { readonly role: string }>(input: {
   readonly messages: ReadonlyArray<T>;
   readonly preserveTokens: number;

@@ -1,16 +1,6 @@
 /**
  * When a turn keeps going, and when it stops.
  *
- * A turn is a loop: ask the model, run whatever tools it asked for, ask again
- * with the results, repeat. Something has to decide when that loop ends, and
- * that decision is the difference between an agent that finishes a task and one
- * that burns a credit card overnight.
- *
- * The rule lives here, on its own, as arithmetic over a tally — no model, no
- * network, no clock. Every stop condition is therefore testable directly, which
- * matters more for this file than for any other in the loop: the failure mode it
- * guards against is one you cannot reproduce on demand.
- *
  * @module agent/loop/stepPolicy
  */
 
@@ -68,15 +58,7 @@ export function recordStep(tally: StepTally, toolCallsThisStep: number): StepTal
   };
 }
 
-/**
- * Decide what happens after a step.
- *
- * Order matters and is deliberate. Interruption wins over everything, because a
- * user who asked to stop should not be told the turn hit a limit. A step that
- * requested no tools is a finished answer, so it beats the limits too — hitting
- * `maxSteps` exactly on the final step is a success, not a truncation. Only then
- * do the budgets apply.
- */
+/** Decide what happens after a step. */
 export function decideNextStep(input: {
   readonly tally: StepTally;
   readonly limits: StepLimits;

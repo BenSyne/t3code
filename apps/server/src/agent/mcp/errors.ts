@@ -1,11 +1,6 @@
 /**
  * Why an MCP server could not be used.
  *
- * Tagged rather than a bare `Error` so it stays distinguishable in a failure
- * channel it may share with others. The message is written for the warning the
- * user sees, which is the only place these surface — nothing here ever reaches
- * the model or ends a turn.
- *
  * @module agent/mcp/errors
  */
 import * as Schema from "effect/Schema";
