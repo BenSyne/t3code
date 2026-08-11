@@ -248,7 +248,13 @@ const delegate = (context: ConductorContext): AgentTool =>
           description: "The complete instructions for the other agent.",
         }),
         model: optionalParam(
-          Schema.String.annotate({ description: "Leave unset to use the provider's default." }),
+          Schema.String.annotate({
+            description:
+              "Which model runs the task, from list_models. Name one: choosing the tier is most " +
+              "of what routing well means, and a provider with no default configured fails the " +
+              "delegation outright rather than picking for you. Leave unset only when the " +
+              "provider's own default is genuinely the right call.",
+          }),
         ),
         reasoningEffort: optionalParam(
           Schema.String.annotate({
@@ -315,8 +321,10 @@ const delegate = (context: ConductorContext): AgentTool =>
       const threadId = ThreadId.make(yield* context.nextId);
       const model = params.model ?? target.defaultModel;
       if (model === null) {
+        // Names the recovery rather than only the fault: without it the agent
+        // spends a round trip working out that `list_models` is the answer.
         return yield* toolFailure(
-          `${target.displayName} has no default model. Pass one explicitly.`,
+          `${target.displayName} has no default model. Call list_models for it and pass one as \`model\`.`,
         );
       }
 

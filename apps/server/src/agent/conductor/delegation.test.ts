@@ -37,6 +37,8 @@ const runDelegate = (
   input: {
     readonly worktree: "created" | "failed";
     readonly params?: Record<string, unknown>;
+    /** Null stands for a provider the user never configured a default on. */
+    readonly defaultModel?: string | null;
   } = { worktree: "created" },
 ) =>
   Effect.gen(function* () {
@@ -56,7 +58,7 @@ const runDelegate = (
           driverKind: "codex",
           displayName: "Codex",
           available: true,
-          defaultModel: "gpt-5.6-luna",
+          defaultModel: input.defaultModel === undefined ? "gpt-5.6-luna" : input.defaultModel,
           billing: "subscription" as const,
         },
       ]),
@@ -200,4 +202,43 @@ describe("delegationBranchName", () => {
   it("still produces a usable branch from a title with nothing to slug", () => {
     assert.strictEqual(delegationBranchName("!!!", "abcdef1234"), "t3-agent/task-abcdef12");
   });
+});
+
+describe("delegating to a provider with no default model", () => {
+  it.effect("says which tool supplies the answer, not just that one is missing", () =>
+    Effect.gen(function* () {
+      // The agent reaches this failure whenever the user has not pinned a model
+      // on the target provider, which is the common case for the subscription
+      // CLIs. A message naming only the fault costs a round trip while the
+      // agent works out that `list_models` exists; naming the recovery makes it
+      // one step, and on a live demo it is the difference between a recovery
+      // and a stall.
+      const { outcome, dispatched } = yield* runDelegate({
+        worktree: "created",
+        defaultModel: null,
+      });
+
+      assert.strictEqual(outcome._tag, "Failure");
+      if (outcome._tag !== "Failure") {
+        return;
+      }
+      const message = String((outcome.failure as { message?: unknown }).message ?? outcome.failure);
+      assert.include(message, "list_models");
+      assert.include(message, "Codex");
+      // Nothing was started, so there is no half-made thread to clean up.
+      assert.strictEqual(dispatched.length, 0);
+    }),
+  );
+
+  it.effect("goes ahead when the caller names a model itself", () =>
+    Effect.gen(function* () {
+      const { outcome } = yield* runDelegate({
+        worktree: "created",
+        defaultModel: null,
+        params: { model: "gpt-5.6-luna" },
+      });
+
+      assert.strictEqual(outcome._tag, "Success");
+    }),
+  );
 });
