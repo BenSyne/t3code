@@ -48,6 +48,19 @@ function contextOverflow(text: string): ContextOverflow | null {
 
 const formatTokens = (value: number) => value.toLocaleString("en-US");
 
+/**
+ * The model id a provider rejected, when it names one.
+ *
+ * A thread stores the model it was created with, so a model that is withdrawn
+ * later leaves an old thread replaying a request that can never succeed. The
+ * provider's own sentence is accurate and useless — it does not say that the
+ * fix is one dropdown away.
+ */
+function invalidModel(text: string): string | null {
+  const match = /([\w./:@-]+) is not a valid model(?: ID)?/i.exec(text);
+  return match?.[1] ?? null;
+}
+
 /** Explain running out of room, and say which kind of stuck this is. */
 function describeContextOverflow(
   overflow: ContextOverflow,
@@ -80,6 +93,13 @@ export function describeTurnFailure(cause: unknown, conversationTokens?: number 
   const overflow = contextOverflow(text);
   if (overflow !== null) {
     return describeContextOverflow(overflow, conversationTokens ?? null);
+  }
+
+  const model = invalidModel(text);
+  if (model !== null) {
+    return truncate(
+      `${model} is not a model this provider serves — it may have been withdrawn since this thread was created. Pick another model for this thread.`,
+    );
   }
 
   const message = providerMessage(text);

@@ -101,3 +101,28 @@ describe("other provider failures", () => {
     expect(message.endsWith("…")).toBe(true);
   });
 });
+
+describe("a model the provider no longer serves", () => {
+  // The real message Ben hit: an old thread stored `qwen/qwen3.8`, the id was
+  // withdrawn, and every resend replayed a 400. The provider's own sentence is
+  // accurate and unhelpful — it never says the fix is one dropdown away.
+  const cause =
+    "OpenRouterClient.createChatCompletionStream: Invalid request. qwen/qwen3.8 is not a valid model ID (POST https://openrouter.ai/api/v1/chat/completions)";
+
+  it("names the model and says what to do about it", () => {
+    const message = describeTurnFailure(cause);
+
+    expect(message).toContain("qwen/qwen3.8");
+    expect(message).toContain("Pick another model for this thread.");
+  });
+
+  it("wins over the provider's own wording, which stops at the diagnosis", () => {
+    expect(describeTurnFailure(cause)).not.toBe("Invalid request.");
+  });
+
+  it("leaves other rejections to the provider's message", () => {
+    const other =
+      'Cause([Fail(AiError: HTTP 400 Response: {"message":"temperature must be <= 2"})])';
+    expect(describeTurnFailure(other)).toContain("temperature must be <= 2");
+  });
+});
