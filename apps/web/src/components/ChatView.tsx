@@ -264,6 +264,8 @@ import {
   ProviderStatusBanner,
   shouldShowProviderStatusBanner,
 } from "./chat/ProviderStatusBanner";
+import { ConnectAgentComposer, type ConnectAttempt } from "./chat/ConnectAgentComposer";
+import { preferredFirstRunProvider, shouldAskForKey } from "./chat/connectAgentGate";
 import { ThreadErrorBanner } from "./chat/ThreadErrorBanner";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
@@ -2601,8 +2603,39 @@ function ChatViewContent(props: ChatViewProps) {
       );
     }
     const defaultInstanceId = defaultInstanceIdForDriver(selectedProvider);
-    return providerStatuses.find((status) => status.instanceId === defaultInstanceId) ?? null;
+    const byDriver = providerStatuses.find((status) => status.instanceId === defaultInstanceId);
+    if (byDriver !== undefined) {
+      return byDriver;
+    }
+    // Nothing resolved, which on a fresh install means nothing is set up yet.
+    // Land on the built-in agent so the composer can ask for a key — but only
+    // when there is no other usable provider, because greeting someone who
+    // already signed into Claude with a key prompt is worse than today.
+    return preferredFirstRunProvider(providerStatuses);
   }, [activeProviderInstanceId, providerStatuses, selectedProvider]);
+  // The built-in agent ships with the server and is provisioned without a key,
+  // so the composer asks for one rather than sending the user to Settings.
+  const askForAgentKey = shouldAskForKey(activeProviderStatus);
+  const agentInstanceId = askForAgentKey ? (activeProviderStatus?.instanceId ?? null) : null;
+  const connectAgentCommand = useAtomCommand(serverEnvironment.connectAgent, {
+    label: "chat:connect-agent",
+  });
+  const connectAgentKey = useCallback(
+    async (input: {
+      readonly instanceId: ProviderInstanceId;
+      readonly backend: string;
+      readonly secret?: string;
+      readonly baseUrl?: string;
+    }): Promise<ConnectAttempt> => {
+      const result = await connectAgentCommand({ environmentId, input });
+      // A transport failure is not a verdict on the key, so it is reported as
+      // unreachable rather than letting the user think their key was refused.
+      return result._tag === "Failure"
+        ? { _tag: "Unreachable", detail: "Could not reach the server. Try again in a moment." }
+        : result.value;
+    },
+    [connectAgentCommand, environmentId],
+  );
   const providerStatusBannerKey = getProviderStatusBannerKey(activeProviderStatus);
   const [dismissedProviderStatusBannerKey, setDismissedProviderStatusBannerKey] = useState<
     string | null
@@ -6251,6 +6284,7 @@ function ChatViewContent(props: ChatViewProps) {
                         }
                       >
                         <DraftHeroHeadline
+                          awaitingConnection={agentInstanceId !== null}
                           activeProjectRef={activeProjectRef}
                           activeProjectTitle={activeProject?.title ?? null}
                         />
@@ -6280,6 +6314,16 @@ function ChatViewContent(props: ChatViewProps) {
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
+                            {...(agentInstanceId === null
+                              ? {}
+                              : {
+                                  connectPanel: (
+                                    <ConnectAgentComposer
+                                      instanceId={agentInstanceId}
+                                      onConnect={connectAgentKey}
+                                    />
+                                  ),
+                                })}
                             composerRef={composerRef}
                             composerDraftTarget={composerDraftTarget}
                             environmentId={environmentId}

@@ -10,6 +10,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { ModelPickerContent } from "./ModelPickerContent";
+import { shouldShowInstanceBadge } from "./instanceBadge";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import {
   ModelEsque,
@@ -67,10 +68,14 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     selectedInstanceOptions[0];
   const triggerTitle = selectedModel ? getTriggerDisplayModelName(selectedModel) : props.model;
   const triggerLabel = selectedModel ? getTriggerDisplayModelLabel(selectedModel) : props.model;
-  const duplicateDriverCount = props.instanceEntries.filter(
-    (entry) => activeEntry !== null && entry.driverKind === activeEntry.driverKind,
-  ).length;
-  const showInstanceBadge = Boolean(activeEntry?.accentColor) || duplicateDriverCount > 1;
+  // Badged only when the icon and model name together are not enough to say
+  // which instance is active — see `instanceBadge` for why that is narrower
+  // than "this driver has more than one instance".
+  const showInstanceBadge = shouldShowInstanceBadge({
+    entries: props.instanceEntries,
+    activeEntry,
+    activeModelSlug: selectedModel?.slug ?? props.model,
+  });
 
   const setIsMenuOpen = (open: boolean) => {
     props.onOpenChange?.(open);

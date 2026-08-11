@@ -35,7 +35,11 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "com.t3tools.t3code";
+// This build is redistributed, not upstream's. Apple binds bundle identifiers
+// to teams, so signing `com.t3tools.t3code` with a different Developer ID is
+// both rejected and dishonest — and two apps sharing an identifier collide on
+// preferences and update channels for anyone who installs both.
+const DESKTOP_APP_ID = "com.bensyne.t3code-agent";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -1859,8 +1863,21 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   // electron-builder is filtering out stageResourcesDir directory in the AppImage for production
   yield* fs.copy(stageResourcesDir, path.join(stageAppDir, "apps/desktop/prod-resources"));
 
+  // Associated Domains — and so passkey sign-in — is opt-in rather than
+  // mandatory for a signed build. Requiring it means every signed build needs
+  // a provisioning profile, which needs an App ID with that capability, which
+  // needs a domain you control serving an apple-app-site-association file.
+  // That is reasonable for the upstream product and impossible for a
+  // redistribution, which has no business using T3's passkey auth anyway.
+  //
+  // Set T3CODE_MACOS_PROVISIONING_PROFILE and the configuration is resolved
+  // exactly as before, missing pieces still erroring loudly. Leave it unset
+  // and the app is signed and notarized without the entitlement — everything
+  // local still works; only passkey sign-in is absent.
+  const passkeySigningRequested =
+    (loadRepoEnv({ repoRoot }).T3CODE_MACOS_PROVISIONING_PROFILE?.trim() ?? "") !== "";
   const configuredMacPasskeySigning =
-    options.platform === "mac" && options.signed
+    options.platform === "mac" && options.signed && passkeySigningRequested
       ? yield* Effect.try({
           try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,

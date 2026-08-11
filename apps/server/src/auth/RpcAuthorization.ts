@@ -32,6 +32,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverProbe]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetConfig]: AuthOrchestrationReadScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationOperateScope,
+  // Writes a credential onto a provider instance, so it sits with the other
+  // provider mutations rather than with the read methods.
+  [WS_METHODS.serverConnectAgent]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverUpdateProvider]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverUpdateServer]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverUpdateServerWithProgress]: AuthOrchestrationOperateScope,

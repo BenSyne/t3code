@@ -692,3 +692,53 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 });
+
+it.effect(
+  "falls back to a provider instance when the selected text-generation provider is disabled",
+  () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+
+      // Everything lives in `providerInstances` here, which is where every
+      // provider now lives — the legacy `providers` record only ever held the
+      // five that predate multi-instance configuration.
+      yield* service.updateSettings(
+        yield* decodeSettingsPatch({
+          providerInstances: {
+            "my-agent": { driver: "t3agent", enabled: true },
+          },
+          textGenerationModelSelection: {
+            instanceId: "not-configured",
+            model: "whatever",
+          },
+        }),
+      );
+
+      const settings = yield* service.getSettings;
+
+      // Without the fallback consulting `providerInstances`, this stays pointed
+      // at the missing provider and title generation silently stops working.
+      assert.equal(settings.textGenerationModelSelection.instanceId, "my-agent");
+    }).pipe(Effect.provide(makeServerSettingsLayer()), Effect.provide(NodeServices.layer)),
+);
+
+it.effect("leaves the selection alone when its provider instance is enabled", () =>
+  Effect.gen(function* () {
+    const service = yield* ServerSettingsModule.ServerSettingsService;
+
+    yield* service.updateSettings(
+      yield* decodeSettingsPatch({
+        providerInstances: {
+          "my-agent": { driver: "t3agent", enabled: true },
+          other: { driver: "codex", enabled: true },
+        },
+        textGenerationModelSelection: { instanceId: "other", model: "gpt-5.1" },
+      }),
+    );
+
+    const settings = yield* service.getSettings;
+
+    assert.equal(settings.textGenerationModelSelection.instanceId, "other");
+    assert.equal(settings.textGenerationModelSelection.model, "gpt-5.1");
+  }).pipe(Effect.provide(makeServerSettingsLayer()), Effect.provide(NodeServices.layer)),
+);

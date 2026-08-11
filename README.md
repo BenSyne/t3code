@@ -1,3 +1,61 @@
+# T3 Code — Agent Build
+
+> **An unofficial fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code).** Not affiliated
+> with or endorsed by T3 Tools. Built from upstream `89c320df` (8 Aug 2026, v0.0.32) — everything
+> below this banner is their work and their words.
+>
+> Their README says it better than I could: _"If we ever go the wrong direction, we want you to have
+> everything you need to fork and build the editor that you want."_ This isn't a wrong direction. It's
+> one gap, filled.
+
+T3 Code is a genuinely excellent control surface for the agents you already have — Codex, Claude,
+Cursor, Grok, OpenCode. The gap I kept running into is that it had no agent of **its own**.
+
+So this build adds one.
+
+**It's a real coding agent.** Reads, writes, globs, greps, runs commands, obeys the thread's runtime
+mode and approval prompts, picks up your `AGENTS.md` / `CLAUDE.md`, loads skills, connects MCP
+servers, spawns sub-agents, and checkpoints every turn like any other provider. One OpenRouter key
+points it at almost any model — or bring Anthropic, OpenAI, or Cerebras directly, or run it fully
+local against Ollama, LM Studio, or anything that speaks the OpenAI API.
+
+**And it runs your other agents.** This is the part that changes how the app feels.
+
+It can see which providers you have set up, whether each one bills per token or draws on a
+subscription you've already paid for, and exactly which models each can be pointed at. Then it can
+start work on them — choosing the provider, the model, and how hard to think, per task — read back
+what they actually _did_ rather than what they claimed, send corrections into the same thread, and
+settle or archive the results when they're done.
+
+Which means you can deploy and supervise a swarm across providers **from a single chat**, instead of
+clicking through the sidebar thread by thread.
+
+## Try it
+
+Same as upstream — see [Installation](#installation) below — then open **Settings → Providers → +**
+and add the built-in agent. It defaults to OpenRouter; drop your key in the Environment variables
+section marked **sensitive** and you're running.
+
+Full guide: **[docs/user/t3-agent.md](./docs/user/t3-agent.md)**
+
+## What it won't do
+
+Stated plainly, because finding out later is worse:
+
+- **Nothing pings it when a delegated thread finishes.** It reads them back when you next ask. There
+  is no background watcher, and it will tell you so rather than promising to keep an eye on things.
+- **It can't delete anything** — not threads, not projects. Deletion is the one action with no undo.
+- **It can't change what another thread is allowed to do**, so it can never widen its own reach by
+  raising a delegate's permissions.
+- **It won't answer approval prompts for you** unless you turn that on separately. Approvals are how
+  you stay in the loop.
+- Delegating spends the **target** provider's credits — nothing per turn on a subscription, real
+  money on an API key — and there is no cap on how many run at once, so a wide fan-out spends widely.
+
+---
+
+_Everything from here down is upstream's README, unchanged._
+
 # T3 Code
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).

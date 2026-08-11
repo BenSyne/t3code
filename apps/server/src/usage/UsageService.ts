@@ -89,6 +89,15 @@ export class UsageService extends Context.Service<
   UsageService,
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
+    /**
+     * The current model rate table.
+     *
+     * Exposed so a provider that bills a key per token can price a turn as it
+     * happens, rather than waiting for the transcript scan that produces the
+     * Usage page. Empty until the table has loaded, which prices as `unpriced`
+     * — reported as unknown rather than as free.
+     */
+    readonly rateTable: Effect.Effect<RateTable>;
   }
 >()("t3/usage/UsageService") {}
 
@@ -113,6 +122,7 @@ export const layerTest = Layer.succeed(
         },
         scanDurationMs: 0,
       }),
+    rateTable: Effect.succeed(new Map()),
   }),
 );
 
@@ -414,7 +424,13 @@ export const make = Effect.gen(function* () {
     } satisfies UsageSummary;
   });
 
-  return { readSummary } as const;
+  return {
+    readSummary,
+    // Read at call time: the table is refreshed in the background, and a
+    // provider pricing a turn should get the newest one rather than whatever
+    // was loaded when it started.
+    rateTable: Effect.sync(() => rates),
+  } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);
