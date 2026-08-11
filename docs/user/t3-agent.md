@@ -123,7 +123,11 @@ branch when it delegates; the work is not in your checkout until you merge it.
 
 Worth knowing: a worktree starts from the current commit, so uncommitted changes in your own checkout
 are not in it. If you want a delegate working on something you have in progress, commit it first —
-or ask for the work to run in your directory instead, which it will do one task at a time.
+or ask for the work to run in your directory instead.
+
+Isolation is a default, not a rule you have to argue with. Tell it not to use worktrees and it will
+say once what that risks and then do as you asked, including for parallel work. It is your
+repository.
 
 There is no cap on how many delegations run at once — swarming is the point — so a large fan-out
 spends a large amount at once on whatever keys those providers use. It can never delegate to another

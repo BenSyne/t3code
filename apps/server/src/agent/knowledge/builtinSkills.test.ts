@@ -134,6 +134,14 @@ describe("the routing skill", () => {
     expect(body).toMatch(/until they merge it/);
   });
 
+  it("lets the user overrule the worktree default rather than enforcing it at them", () => {
+    // Isolation is a default the agent holds, not a rule it polices. Told to
+    // skip worktrees, it must comply and say what that risks — refusing, or
+    // making them anyway, leaves the user believing they were obeyed.
+    expect(body).toMatch(/a default you hold, not a rule you enforce against the user/);
+    expect(body).toMatch(/If they tell\s+you to skip the worktrees, do it/);
+  });
+
   it("warns that a worktree cannot see uncommitted work", () => {
     // The trap: "fix what I just broke" against a fresh worktree silently
     // operates on the last commit instead of what the user is looking at.

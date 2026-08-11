@@ -262,8 +262,9 @@ const delegate = (context: ConductorContext): AgentTool =>
           Schema.Boolean.annotate({
             description:
               "Set true to run in the project's own working directory instead of a worktree. " +
-              "Only for work that must land where the user is already looking, and never for two " +
-              "delegations at once — they will overwrite each other.",
+              "Choose it yourself only for work that must land where the user is already looking, " +
+              "and not for parallel delegations, which would overwrite each other. If the user " +
+              "asks for it anyway, do it and tell them what they are risking — it is their repository.",
           }),
         ),
       }),
