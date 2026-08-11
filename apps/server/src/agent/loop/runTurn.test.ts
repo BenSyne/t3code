@@ -484,3 +484,130 @@ describe("cache breakpoints", () => {
     }),
   );
 });
+
+/**
+ * A model whose first `failures` requests die before anything streams, the way
+ * a dropped connection or a 429 does, and which then behaves.
+ */
+function flakyModel(
+  failures: number,
+  makeError: () => AiError.AiError,
+  steps: ReadonlyArray<ReadonlyArray<Response.StreamPartEncoded>>,
+) {
+  let index = 0;
+  const layer = Layer.effect(
+    LanguageModel.LanguageModel,
+    LanguageModel.make({
+      generateText: () => Effect.succeed([]),
+      streamText: () => {
+        const attempt = index;
+        index += 1;
+        if (attempt < failures) {
+          return Stream.fail(makeError());
+        }
+        return Stream.fromArray(steps[Math.min(attempt - failures, steps.length - 1)] ?? []);
+      },
+    }),
+  );
+  return { layer, callCount: () => index };
+}
+
+const transientError = () =>
+  new AiError.AiError({
+    module: "TestModel",
+    method: "streamText",
+    reason: new AiError.InternalProviderError({ description: "upstream fell over" }),
+  });
+
+const permanentError = () =>
+  new AiError.AiError({
+    module: "TestModel",
+    method: "streamText",
+    reason: new AiError.InvalidRequestError({ description: "temperature out of range" }),
+  });
+
+const retryRun = (model: { layer: Layer.Layer<LanguageModel.LanguageModel> }) =>
+  Effect.gen(function* () {
+    const { emitter, events } = recordingEmitter();
+    const toolkit = yield* buildToolkit([]);
+    const outcome = yield* Effect.result(
+      runTurn({
+        threadId: THREAD,
+        turnId: TURN,
+        prompt: Prompt.make([{ role: "user", content: [{ type: "text", text: "go" }] }]),
+        model: "test-model",
+        contextWindow: 200_000,
+        toolkit,
+        emitter,
+        isInterrupted: () => false,
+        retryBaseDelayMillis: 1,
+      }).pipe(Effect.provide(model.layer)),
+    );
+    return { outcome, events };
+  });
+
+describe("transient provider failures", () => {
+  it.live("retries a request that died before anything streamed", () =>
+    Effect.gen(function* () {
+      const model = flakyModel(1, transientError, [
+        [{ type: "text-delta", id: "t", delta: "Recovered." }, usagePart(10, 5)],
+      ]);
+      const { outcome, events } = yield* retryRun(model);
+
+      expect(outcome._tag).toBe("Success");
+      if (outcome._tag !== "Success") return;
+      expect(outcome.success.text).toBe("Recovered.");
+      expect(model.callCount()).toBe(2);
+      // The failed attempt must leave no trace: one message, no doubled text.
+      expect(events.filter((e) => e.kind === "text")).toHaveLength(1);
+    }),
+  );
+
+  it.live("gives up once the retries are spent, with the real failure", () =>
+    Effect.gen(function* () {
+      const model = flakyModel(99, transientError, []);
+      const { outcome } = yield* retryRun(model);
+
+      expect(outcome._tag).toBe("Failure");
+      // The first attempt plus MAX_TRANSIENT_RETRIES, then the user hears
+      // about it — not a loop that bills forever against a provider outage.
+      expect(model.callCount()).toBe(4);
+    }),
+  );
+
+  it.effect("does not retry a failure a resend cannot fix", () =>
+    Effect.gen(function* () {
+      const model = flakyModel(99, permanentError, []);
+      const { outcome } = yield* retryRun(model);
+
+      expect(outcome._tag).toBe("Failure");
+      expect(model.callCount()).toBe(1);
+    }),
+  );
+
+  it.effect("does not retry once output has already streamed", () =>
+    Effect.gen(function* () {
+      // Resending after a mid-stream death would play the same text twice.
+      let calls = 0;
+      const layer = Layer.effect(
+        LanguageModel.LanguageModel,
+        LanguageModel.make({
+          generateText: () => Effect.succeed([]),
+          streamText: () => {
+            calls += 1;
+            return Stream.concat(
+              Stream.fromArray<Response.StreamPartEncoded>([
+                { type: "text-delta", id: "t", delta: "Half an ans" },
+              ]),
+              Stream.fail(transientError()),
+            );
+          },
+        }),
+      );
+      const { outcome } = yield* retryRun({ layer });
+
+      expect(outcome._tag).toBe("Failure");
+      expect(calls).toBe(1);
+    }),
+  );
+});

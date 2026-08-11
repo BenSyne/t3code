@@ -43,6 +43,12 @@ import {
   type StepLimits,
   type StepStopReason,
 } from "./stepPolicy.ts";
+import {
+  DEFAULT_RETRY_BASE_MILLIS,
+  isTransientProviderFailure,
+  MAX_TRANSIENT_RETRIES,
+  transientRetrySchedule,
+} from "./transientRetry.ts";
 
 /** What the loop needs to talk to the outside world. */
 export interface TurnEmitter {
@@ -98,6 +104,8 @@ export interface RunTurnInput {
   readonly priceStep?: ((usage: RequestUsage) => TurnCost) | undefined;
   /** Checked between steps. Lets a stop request land without killing the fiber. */
   readonly isInterrupted: () => boolean;
+  /** Base delay for transient-failure retries. Tests shrink it; nothing else should. */
+  readonly retryBaseDelayMillis?: number | undefined;
 }
 
 export interface RunTurnResult {
@@ -163,6 +171,7 @@ export const runTurn = Effect.fn("t3agent/runTurn")(function* (input: RunTurnInp
         emitter: input.emitter,
         stepIndex: tally.steps,
         isInterrupted: input.isInterrupted,
+        retryBaseDelayMillis: input.retryBaseDelayMillis ?? DEFAULT_RETRY_BASE_MILLIS,
       }),
     );
 
@@ -258,6 +267,7 @@ const runStep = Effect.fnUntraced(function* (input: {
   readonly emitter: TurnEmitter;
   readonly stepIndex: number;
   readonly isInterrupted: () => boolean;
+  readonly retryBaseDelayMillis: number;
 }) {
   const parts: Array<Response.AnyPart> = [];
   const textChunks: Array<string> = [];
@@ -280,7 +290,7 @@ const runStep = Effect.fnUntraced(function* (input: {
     });
   });
 
-  yield* Stream.runForEach(
+  const consumeStream = Stream.runForEach(
     // Stop pulling the moment Stop is pressed, rather than at the end of the
     // step. The decision to end the turn is made after a step completes, and a
     // step is a whole model response plus its tool calls — so without this the
@@ -376,6 +386,15 @@ const runStep = Effect.fnUntraced(function* (input: {
         }
       }),
   );
+
+  // Only while nothing has streamed: once a delta reached the user, resending
+  // the request would play the same text twice. `parts` is empty on every
+  // retried attempt, so no state from the failed one leaks into the next.
+  yield* Effect.retry(consumeStream, {
+    while: (error) => parts.length === 0 && isTransientProviderFailure(error),
+    schedule: transientRetrySchedule(input.retryBaseDelayMillis),
+    times: MAX_TRANSIENT_RETRIES,
+  });
 
   if (messageOpen) {
     yield* input.emitter.assistantMessageItem({
