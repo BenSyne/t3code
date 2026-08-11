@@ -62,12 +62,18 @@ export const OPENROUTER_EFFORTS: ReadonlyArray<ReasoningEffort> = ["none", "low"
 /**
  * Known models per backend, best-first.
  *
- * `openrouter` is generated from the live API; the rest are written from each
- * vendor's own documentation, because their catalogues need a key to read and
- * a build cannot assume one. Written-out entries rot — this list once carried
- * five ids that had stopped existing — so treat anything here as a convenience
- * that may be stale, never as proof a model exists. Nothing is gated on it:
- * the picker takes any id typed at it, and an unknown window reports unknown.
+ * `openrouter` is generated from the live API, and `anthropic` is replaced at
+ * runtime by that vendor's own catalogue as soon as a key is present — what is
+ * written here for those two is a cold-start seed, nothing more. The rest come
+ * from each vendor's documentation, because their catalogues either need a key
+ * and still do not publish context windows, or belong to whatever server the
+ * user is pointing at.
+ *
+ * Written-out entries rot — this list once carried five ids that had stopped
+ * existing and windows wrong by five times — so treat anything here as a
+ * convenience that may be stale, never as proof a model exists. Nothing is
+ * gated on it: the picker takes any id typed at it, and an unknown window
+ * reports unknown rather than a made-up number.
  *
  * `openai-compat` is deliberately empty: whatever is behind that address is
  * whatever the user is running, and guessing would be worse than asking.

@@ -28,6 +28,7 @@ import { McpServerConfig, type McpServers } from "../../agent/mcp/serverConfig.t
 import { safeBaseUrlOrUndefined } from "../../agent/model/baseUrl.ts";
 import { resolveCredential } from "../../agent/model/credentials.ts";
 import { contextWindowFor } from "../../agent/model/ModelCatalog.ts";
+import { makeAnthropicCatalog } from "../../agent/model/anthropicCatalog.ts";
 import { makeOpenRouterCatalog } from "../../agent/model/openRouterCatalog.ts";
 import { resolveLanguageModel } from "../../agent/model/resolveLanguageModel.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
@@ -99,10 +100,6 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
       // which falls back to the default instead of failing the provider.
       const baseUrl = safeBaseUrlOrUndefined(config.baseUrl);
       const crypto = yield* Crypto.Crypto;
-      // Only OpenRouter has a public catalogue worth fetching; every other
-      // backend keeps the static list. Null rather than an empty catalogue so
-      // the fallback is decided in one place.
-      const liveCatalog = backend === "openrouter" ? yield* makeOpenRouterCatalog() : null;
       // Read on demand rather than captured: a key added after the instance was
       // materialised should work without restarting the server.
       const credential = () =>
@@ -113,6 +110,17 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
           // report an instance as broken when it is ready to use.
           keyOptional: backend === "openai-compat",
         });
+      // The two backends that publish a catalogue worth reading. OpenRouter's
+      // is public; Anthropic's needs the key and is worth the call because it
+      // carries the context window and the efforts each model accepts, both of
+      // which were wrong while they were written out by hand. Null rather than
+      // an empty catalogue, so the fallback is decided in one place.
+      const liveCatalog =
+        backend === "openrouter"
+          ? yield* makeOpenRouterCatalog()
+          : backend === "anthropic"
+            ? yield* makeAnthropicCatalog(credential)
+            : null;
 
       const stampIdentity = (draft: ServerProviderDraft) => ({
         ...draft,

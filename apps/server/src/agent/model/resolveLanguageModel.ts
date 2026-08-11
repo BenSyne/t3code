@@ -72,6 +72,12 @@ export function anthropicReasoningConfig(effort: ReasoningEffort | undefined):
       return { thinking: { type: "adaptive" }, output_config: { effort: "low" } };
     case "medium":
       return { thinking: { type: "adaptive" }, output_config: { effort: "medium" } };
+    // The top three collapse into one. Anthropic's own ladder goes up to `max`
+    // and its `/v1/models` reports which models take it, but the client layer
+    // types this field as low/medium/high, so `max` cannot be sent from here —
+    // and a cast to force it past the compiler would only move the failure to
+    // runtime. This is why the catalogue does not offer `max` on Anthropic:
+    // a level that silently lands on a lower one is worse than one not shown.
     case "high":
     case "xhigh":
     case "max":
