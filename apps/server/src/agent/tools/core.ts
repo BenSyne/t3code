@@ -12,14 +12,24 @@ import { makeReadTool } from "./fs/read.ts";
 import { makeWriteTool } from "./fs/write.ts";
 import { withApproval, type AgentToolContext, type ToolContributor } from "./registry.ts";
 import { makeBashTool } from "./shell/bash.ts";
+import { makeWebFetchTool } from "./web/fetch.ts";
 
-export const CORE_TOOL_NAMES = ["read", "write", "edit", "glob", "grep", "bash"] as const;
+export const CORE_TOOL_NAMES = [
+  "read",
+  "write",
+  "edit",
+  "glob",
+  "grep",
+  "bash",
+  "webfetch",
+] as const;
 
-/** What the user is shown when asked about a call: the command, or the path. */
+/** What the user is shown when asked about a call: the command, path, or URL. */
 const commandOf = (params: never): string =>
   String((params as { command?: unknown }).command ?? "");
 const filePathOf = (params: never): string =>
   String((params as { filePath?: unknown }).filePath ?? "");
+const urlOf = (params: never): string => String((params as { url?: unknown }).url ?? "");
 
 export const coreTools: ToolContributor = {
   name: "core",
@@ -31,5 +41,6 @@ export const coreTools: ToolContributor = {
       withApproval(makeWriteTool(context), context, filePathOf),
       withApproval(makeEditTool(context), context, filePathOf),
       withApproval(makeBashTool(context), context, commandOf),
+      withApproval(makeWebFetchTool(context), context, urlOf),
     ]),
 };

@@ -17,6 +17,7 @@ const CONTEXT = {
   workspaceRoot: "/workspace",
   fileSystem: {} as AgentToolContext["fileSystem"],
   spawner: {} as AgentToolContext["spawner"],
+  httpClient: {} as AgentToolContext["httpClient"],
   commandEnv: {},
   // These tests exercise the tools, not the gate; approval has its own suite.
   requestApproval: () => Effect.succeed({ _tag: "Allowed" as const }),

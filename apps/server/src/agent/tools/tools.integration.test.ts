@@ -14,6 +14,7 @@ import { it, describe, expect } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Stream from "effect/Stream";
+import { HttpClient } from "effect/unstable/http";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import { coreTools } from "./core.ts";
@@ -46,6 +47,8 @@ const makeWorkspace = Effect.gen(function* () {
     workspaceRoot,
     fileSystem,
     spawner,
+    // A client that fails loudly if touched: nothing in these tests fetches.
+    httpClient: HttpClient.make(() => Effect.die(new Error("no HTTP in this suite"))),
     commandEnv: { PATH: process.env.PATH ?? "" },
     // These tests exercise the tools, not the gate; approval has its own suite.
     requestApproval: () => Effect.succeed({ _tag: "Allowed" as const }),

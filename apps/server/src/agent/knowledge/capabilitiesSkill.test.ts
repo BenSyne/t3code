@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import { HttpClient } from "effect/unstable/http";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import { unavailableOrchestrationClient } from "../conductor/ConductorClient.ts";
@@ -19,6 +20,7 @@ const conductorToolNames = Effect.gen(function* () {
     workspaceRoot: "/",
     fileSystem: yield* FileSystem.FileSystem,
     spawner: yield* ChildProcessSpawner.ChildProcessSpawner,
+    httpClient: HttpClient.make(() => Effect.die(new Error("no HTTP in this test"))),
     commandEnv: {},
     requestApproval: () => Effect.succeed({ _tag: "Allowed" as const }),
   };

@@ -50,6 +50,10 @@ export function describeToolCall(input: {
       const pattern = stringField(params, "pattern") ?? "";
       return { itemType: "dynamic_tool_call", title: `Search for ${pattern}`.trim() };
     }
+    case "webfetch": {
+      const url = stringField(params, "url") ?? "a page";
+      return { itemType: "dynamic_tool_call", title: `Fetch ${url}`, data: { url } };
+    }
     default:
       return { itemType: "dynamic_tool_call", title: input.toolName };
   }

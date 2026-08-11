@@ -272,6 +272,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         workspaceRoot,
         fileSystem,
         spawner,
+        httpClient,
         commandEnv: options.commandEnv,
         requestApproval: (request: { readonly toolName: string; readonly target: string }) =>
           askForApproval({ threadId: input.threadId, mode: input.runtimeMode, ...request }),

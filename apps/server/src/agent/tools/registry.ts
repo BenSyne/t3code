@@ -19,6 +19,7 @@ import type * as AiError from "effect/unstable/ai/AiError";
 import type * as Schema from "effect/Schema";
 import type * as Tool from "effect/unstable/ai/Tool";
 import * as Toolkit from "effect/unstable/ai/Toolkit";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import { toolFailure, type ToolFailure } from "./failure.ts";
@@ -35,6 +36,7 @@ export interface AgentToolContext {
   readonly workspaceRoot: string;
   readonly fileSystem: FileSystem.FileSystem;
   readonly spawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
+  readonly httpClient: HttpClient.HttpClient;
   /** From the provider instance, so commands see the same `PATH` and credentials. */
   readonly commandEnv: Record<string, string>;
   /**
