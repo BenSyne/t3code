@@ -112,15 +112,18 @@ const VENDOR_NAMES: Readonly<Record<string, string>> = {
 function splitName(model: OpenRouterApiModel): { label: string; vendor: string | undefined } {
   const name = model.name ?? model.id;
   const colon = name.indexOf(":");
-  if (colon > 0) {
-    return { label: name.slice(colon + 1).trim(), vendor: name.slice(0, colon).trim() };
-  }
+  const label = colon > 0 ? name.slice(colon + 1).trim() : name;
   const family = familyOf(model);
   if (family === "") {
-    return { label: name, vendor: undefined };
+    return { label, vendor: colon > 0 ? name.slice(0, colon).trim() : undefined };
   }
-  const vendor = VENDOR_NAMES[family] ?? family.charAt(0).toUpperCase() + family.slice(1);
-  return { label: name, vendor };
+  // A curated name outranks the one in the feed. OpenRouter respells vendors
+  // from time to time — "Moonshot AI" became "MoonshotAI" — and letting that
+  // through renames rows in the picker for no reason the user can see.
+  const vendor =
+    VENDOR_NAMES[family] ??
+    (colon > 0 ? name.slice(0, colon).trim() : family.charAt(0).toUpperCase() + family.slice(1));
+  return { label, vendor };
 }
 
 function toCatalogModel(model: OpenRouterApiModel): CatalogModel {

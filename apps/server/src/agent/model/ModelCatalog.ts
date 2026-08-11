@@ -13,6 +13,7 @@
  *
  * @module agent/model/ModelCatalog
  */
+import { OPENROUTER_FALLBACK_MODELS } from "./openrouterFallback.ts";
 import type { ReasoningEffort } from "./reasoning.ts";
 import type { BackendKind } from "./resolveLanguageModel.ts";
 
@@ -61,6 +62,13 @@ export const OPENROUTER_EFFORTS: ReadonlyArray<ReasoningEffort> = ["none", "low"
 /**
  * Known models per backend, best-first.
  *
+ * `openrouter` is generated from the live API; the rest are written from each
+ * vendor's own documentation, because their catalogues need a key to read and
+ * a build cannot assume one. Written-out entries rot — this list once carried
+ * five ids that had stopped existing — so treat anything here as a convenience
+ * that may be stale, never as proof a model exists. Nothing is gated on it:
+ * the picker takes any id typed at it, and an unknown window reports unknown.
+ *
  * `openai-compat` is deliberately empty: whatever is behind that address is
  * whatever the user is running, and guessing would be worse than asking.
  */
@@ -101,107 +109,14 @@ export const KNOWN_MODELS: Record<BackendKind, ReadonlyArray<CatalogModel>> = {
       reasoningEfforts: ["low", "medium", "high"],
     },
   ],
-  // One key, most of the frontier. Ordered best-first because the picker shows
-  // this order and the first few are all most people ever scroll past.
+  // One key, most of the frontier, generated rather than typed.
   //
   // Every entry carries a `vendor`, which is what makes a list this long
   // readable: the row reads "Claude Sonnet 5 / T3 Agent · Anthropic" instead of
   // leaving the user to decode a slug. It is also load-bearing for the label —
   // the picker strips a leading vendor word, so "Anthropic" here is what keeps
   // a future "Anthropic Claude 5.5" from rendering the word twice.
-  openrouter: [
-    {
-      id: "anthropic/claude-opus-5",
-      label: "Claude Opus 5",
-      vendor: "Anthropic",
-      contextWindow: 200_000,
-      reasoningEfforts: OPENROUTER_EFFORTS,
-    },
-    {
-      id: "anthropic/claude-sonnet-5",
-      label: "Claude Sonnet 5",
-      vendor: "Anthropic",
-      contextWindow: 200_000,
-      reasoningEfforts: OPENROUTER_EFFORTS,
-    },
-    {
-      id: "openai/gpt-5.1",
-      label: "GPT-5.1",
-      vendor: "OpenAI",
-      contextWindow: 400_000,
-      reasoningEfforts: OPENAI_EFFORTS,
-    },
-    {
-      id: "openai/gpt-5.1-mini",
-      label: "GPT-5.1 mini",
-      vendor: "OpenAI",
-      contextWindow: 400_000,
-      reasoningEfforts: OPENAI_EFFORTS,
-    },
-    {
-      id: "google/gemini-3-pro",
-      label: "Gemini 3 Pro",
-      vendor: "Google",
-      contextWindow: 1_048_576,
-      reasoningEfforts: OPENROUTER_EFFORTS,
-    },
-    {
-      id: "google/gemini-3-flash",
-      label: "Gemini 3 Flash",
-      vendor: "Google",
-      contextWindow: 1_048_576,
-      reasoningEfforts: OPENROUTER_EFFORTS,
-    },
-    {
-      id: "moonshotai/kimi-k3",
-      label: "Kimi K3",
-      vendor: "Moonshot AI",
-      contextWindow: 1_048_576,
-      reasoningEfforts: OPENROUTER_EFFORTS,
-    },
-    {
-      id: "deepseek/deepseek-v4-pro",
-      label: "DeepSeek V4 Pro",
-      vendor: "DeepSeek",
-      contextWindow: 1_048_576,
-      reasoningEfforts: OPENROUTER_EFFORTS,
-    },
-    {
-      id: "deepseek/deepseek-v4-flash",
-      label: "DeepSeek V4 Flash",
-      vendor: "DeepSeek",
-      contextWindow: 1_048_576,
-      reasoningEfforts: OPENROUTER_EFFORTS,
-    },
-    {
-      id: "qwen/qwen3.8",
-      label: "Qwen 3.8",
-      vendor: "Alibaba",
-      contextWindow: 262_144,
-      reasoningEfforts: OPENROUTER_EFFORTS,
-    },
-    {
-      id: "qwen/qwen3-coder-480b",
-      label: "Qwen3 Coder 480B",
-      vendor: "Alibaba",
-      contextWindow: 262_144,
-      reasoningEfforts: OPENROUTER_EFFORTS,
-    },
-    {
-      id: "minimax/minimax-m2.5",
-      label: "MiniMax M2.5",
-      vendor: "MiniMax",
-      contextWindow: 204_800,
-      reasoningEfforts: OPENROUTER_EFFORTS,
-    },
-    {
-      id: "z-ai/glm-5.1",
-      label: "GLM 5.1",
-      vendor: "Z.ai",
-      contextWindow: 202_752,
-      reasoningEfforts: OPENROUTER_EFFORTS,
-    },
-  ],
+  openrouter: OPENROUTER_FALLBACK_MODELS,
   // Cerebras runs open-weight models on their own silicon, roughly an order of
   // magnitude faster than GPU inference. Two things here are not guesses and
   // should not be "tidied" into the shared defaults:

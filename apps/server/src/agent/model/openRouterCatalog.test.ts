@@ -77,16 +77,33 @@ describe("selecting the OpenRouter catalogue", () => {
   });
 
   it("splits OpenRouter's 'Vendor: Name' into a label and a vendor", () => {
+    // "google" is not one we curate, so the feed's own spelling is used.
     const picked = selectCatalog([
-      model({ id: "z-ai/glm-5.2", name: "Z.AI: GLM 5.2", context_length: 202_752 }),
+      model({ id: "google/gemini-3.6-flash", name: "Google: Gemini 3.6 Flash" }),
     ]);
 
     expect(picked[0]).toMatchObject({
-      id: "z-ai/glm-5.2",
+      id: "google/gemini-3.6-flash",
+      label: "Gemini 3.6 Flash",
+      vendor: "Google",
+    });
+  });
+
+  it("prefers our spelling of a vendor over the feed's", () => {
+    // OpenRouter respells vendors from time to time — "Moonshot AI" became
+    // "MoonshotAI" — and letting that through silently renames rows in the
+    // picker. The label still comes off the feed; only the vendor is ours.
+    const picked = selectCatalog([
+      model({ id: "z-ai/glm-5.2", name: "Z.AI: GLM 5.2", context_length: 202_752 }),
+      model({ id: "moonshotai/kimi-k3", name: "MoonshotAI: Kimi K3" }),
+    ]);
+
+    expect(picked.find((entry) => entry.id === "z-ai/glm-5.2")).toMatchObject({
       label: "GLM 5.2",
-      vendor: "Z.AI",
+      vendor: "Z.ai",
       contextWindow: 202_752,
     });
+    expect(picked.find((entry) => entry.id === "moonshotai/kimi-k3")?.vendor).toBe("Moonshot AI");
   });
 
   it("offers the reasoning picker only where the API vouches for reasoning", () => {

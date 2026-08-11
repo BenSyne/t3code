@@ -58,3 +58,37 @@ describe("catalogue coverage", () => {
     expect(efforts("gemma-4-31b")).toEqual(["none", "low", "medium", "high"]);
   });
 });
+
+describe("the generated OpenRouter fallback", () => {
+  const openrouter = KNOWN_MODELS.openrouter;
+
+  it("keeps to the id shape OpenRouter actually serves", () => {
+    // The bug this exists for: the list used to be typed by hand, and five of
+    // thirteen ids had quietly stopped existing. Picking one produced a 400
+    // and a thread that could not answer. Shape is all a unit test can check —
+    // that the ids are real is guaranteed by generating them from the live API
+    // (scripts/refresh-openrouter-fallback.ts), not by asserting here.
+    for (const entry of openrouter) {
+      expect(entry.id, entry.id).toMatch(/^[a-z0-9-]+\/[A-Za-z0-9._-]+$/);
+      expect(entry.label.trim(), entry.id).not.toBe("");
+    }
+  });
+
+  it("gives every entry a context window, since the meter divides by it", () => {
+    // A zero here would render the usage meter as either 0% forever or NaN.
+    for (const entry of openrouter) {
+      expect(entry.contextWindow, entry.id).toBeGreaterThan(0);
+    }
+  });
+
+  it("names the vendor on every row, which is what makes a long list readable", () => {
+    for (const entry of openrouter) {
+      expect(entry.vendor, entry.id).toBeTruthy();
+    }
+  });
+
+  it("lists each model once", () => {
+    const ids = openrouter.map((entry) => entry.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
