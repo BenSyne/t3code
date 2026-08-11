@@ -24,6 +24,7 @@ import * as Prompt from "effect/unstable/ai/Prompt";
 import type * as Response from "effect/unstable/ai/Response";
 
 import { describeToolCall, describeToolResult } from "../events/toolItemMapping.ts";
+import { withCacheBreakpoints } from "../model/promptCaching.ts";
 import {
   EMPTY_USAGE,
   foldUsage,
@@ -288,7 +289,12 @@ const runStep = Effect.fnUntraced(function* (input: {
     // fiber. Everything already streamed is kept: this ends the step early, it
     // does not discard it.
     Stream.takeWhile(
-      LanguageModel.streamText({ prompt: input.prompt, toolkit: input.toolkit }),
+      // Marked at request time, never in the prompt the loop carries forward —
+      // see promptCaching.ts. Anthropic reads the marks; everyone else ignores.
+      LanguageModel.streamText({
+        prompt: withCacheBreakpoints(input.prompt),
+        toolkit: input.toolkit,
+      }),
       () => !input.isInterrupted(),
     ),
     (part) =>

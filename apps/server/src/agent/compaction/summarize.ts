@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as LanguageModel from "effect/unstable/ai/LanguageModel";
 import * as Prompt from "effect/unstable/ai/Prompt";
 
+import { withCacheBreakpoints } from "../model/promptCaching.ts";
 import { estimateTokens, splitForCompaction } from "./tokenBudget.ts";
 
 const INSTRUCTION = `Summarise the conversation so far so that another engineer could pick up exactly where it left off.
@@ -50,9 +51,14 @@ export const compactPrompt = Effect.fnUntraced(function* (input: {
     return { _tag: "NotNeeded" as const };
   }
 
-  const request = Prompt.concat(
-    Prompt.make(split.summarise),
-    Prompt.make([{ role: "user", content: [{ type: "text", text: INSTRUCTION }] }]),
+  // The history being summarised is the same prefix the turn loop has been
+  // caching, so marking it here lets the summary request read that cache
+  // instead of re-billing the whole conversation.
+  const request = withCacheBreakpoints(
+    Prompt.concat(
+      Prompt.make(split.summarise),
+      Prompt.make([{ role: "user", content: [{ type: "text", text: INSTRUCTION }] }]),
+    ),
   );
 
   // Defects as well as failures. A bug in a provider client would otherwise

@@ -460,3 +460,27 @@ describe("a response the toolkit cannot read", () => {
     }),
   );
 });
+
+describe("cache breakpoints", () => {
+  const optionsOf = (prompt: Prompt.Prompt) =>
+    prompt.content.map(
+      (message) =>
+        (message.options as { anthropic?: { cacheControl?: { type?: string } } }).anthropic
+          ?.cacheControl?.type,
+    );
+
+  it.effect("marks the request it sends, not the prompt it carries forward", () =>
+    Effect.gen(function* () {
+      const { result, model } = yield* run({
+        script: [[{ type: "text-delta", id: "t", delta: "Done." }, usagePart(10, 5)]],
+      });
+
+      // The wire request is marked so Anthropic can bill the prefix as cached…
+      expect(optionsOf(model.seen[0]!)).toEqual(["ephemeral"]);
+      // …and the conversation the next turn starts from is not, because the
+      // mark has to move to the new tail rather than accumulate. Anthropic
+      // rejects a request with more than four marks outright.
+      expect(optionsOf(result.prompt).every((mark) => mark === undefined)).toBe(true);
+    }),
+  );
+});
