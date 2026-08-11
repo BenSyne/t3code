@@ -116,9 +116,16 @@ describe("the routing skill", () => {
 
   it("teaches that a blocked thread is not a slow one", () => {
     // The three states look identical from outside. Without this the agent
-    // polls a thread that has stopped and will never move again.
+    // waits on a thread that has stopped and will never move again.
     expect(body).toContain("awaitingInput");
-    expect(body).toMatch(/Polling it is wasted/);
+    expect(body).toMatch(/will never move on its own/);
+  });
+
+  it("sends the agent to wait_for_thread rather than checking in a loop", () => {
+    // Checking by hand costs a whole turn per look; the server can answer for
+    // free. The skill has to say so, or the model does the expensive thing.
+    expect(body).toContain("wait_for_thread");
+    expect(body).toMatch(/every check you make by hand is a whole turn/);
   });
 
   it("sends corrections into the existing thread rather than a new one", () => {

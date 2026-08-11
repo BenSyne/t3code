@@ -218,8 +218,8 @@ const delegate = (context: ConductorContext): AgentTool =>
     Tool.make("delegate_to_agent", {
       description:
         "Start a thread with another coding agent and send it a task. Returns the thread id. " +
-        "The thread runs on its own and nothing will tell you when it finishes — use " +
-        "read_delegated_thread to look. Do not promise the user you will watch it or report back.",
+        "The thread runs on its own — use wait_for_thread to wait for it, then " +
+        "read_delegated_thread to collect the result.",
       parameters: Schema.Struct({
         providerInstanceId: Schema.String.annotate({
           description: "From list_providers.",
@@ -382,6 +382,79 @@ const delegate = (context: ConductorContext): AgentTool =>
         threadId: String(threadId),
         ...(effortNote === undefined ? {} : { note: effortNote }),
       };
+    }),
+  );
+
+/** How often the server re-reads a thread it is waiting on. Not the agent's problem. */
+const WAIT_POLL_INTERVAL_MILLIS = 1_000;
+const WAIT_DEFAULT_SECONDS = 120;
+const WAIT_MAX_SECONDS = 600;
+
+/**
+ * Wait for a delegated thread, without spending a turn per look.
+ *
+ * The alternative is telling the agent to check, which it does by calling a
+ * tool, which costs a whole model request every time it wonders. Waiting here
+ * costs a sleeping fiber.
+ *
+ * It returns on a thread that has *stopped*, which includes stopping to ask a
+ * question: a blocked thread will not move until someone answers, so treating
+ * that as "still working" is how a fleet quietly deadlocks.
+ */
+const waitForThread = (context: ConductorContext): AgentTool =>
+  defineTool(
+    Tool.make("wait_for_thread", {
+      description:
+        "Wait until a thread stops — either it finished, or it is blocked waiting on a person. " +
+        "Use this instead of checking repeatedly: it costs you nothing while it waits. Returns " +
+        "why it stopped; if it is blocked, answer with answer_thread_question and wait again. " +
+        "On 'timeout' the thread is still working and you can wait again.",
+      parameters: Schema.Struct({
+        threadId: Schema.String,
+        timeoutSeconds: optionalParam(
+          Schema.Number.annotate({
+            description: "How long to wait before giving up. Defaults to 120, capped at 600.",
+          }),
+        ),
+      }),
+      success: Schema.Struct({
+        outcome: Schema.String.annotate({
+          description: '"finished", "blocked", or "timeout".',
+        }),
+        isRunning: Schema.Boolean,
+        awaitingInput: Schema.Boolean,
+        awaitingApproval: Schema.Boolean,
+        status: Schema.String,
+      }),
+      failure: ToolFailure,
+      failureMode: "return",
+    }),
+    Effect.fnUntraced(function* (params) {
+      const threadId = ThreadId.make(params.threadId);
+      const budgetMillis =
+        Math.min(Math.max(params.timeoutSeconds ?? WAIT_DEFAULT_SECONDS, 1), WAIT_MAX_SECONDS) *
+        1_000;
+      let waited = 0;
+
+      while (true) {
+        const thread = yield* context.client.getThread(threadId);
+        if (thread === undefined) {
+          return yield* toolFailure(`No thread with id "${params.threadId}".`);
+        }
+        const blocked = thread.awaitingInput || thread.awaitingApproval;
+        const settled = !thread.isRunning || blocked;
+        if (settled || waited >= budgetMillis) {
+          return {
+            outcome: settled ? (blocked ? "blocked" : "finished") : "timeout",
+            isRunning: thread.isRunning,
+            awaitingInput: thread.awaitingInput,
+            awaitingApproval: thread.awaitingApproval,
+            status: thread.status,
+          };
+        }
+        yield* Effect.sleep(WAIT_POLL_INTERVAL_MILLIS);
+        waited += WAIT_POLL_INTERVAL_MILLIS;
+      }
     }),
   );
 
@@ -817,6 +890,7 @@ export function conductorContributor(context: ConductorContext | null): ToolCont
               listThreads(context),
               createProject(context),
               delegate(context),
+              waitForThread(context),
               sendToThread(context),
               readDelegated(context),
               answerQuestion(context),

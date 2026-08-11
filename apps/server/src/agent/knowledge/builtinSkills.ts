@@ -143,7 +143,8 @@ pointed at, \`list_projects\` and \`list_threads\` for what is already in flight
 you can read what another agent is doing right now.
 
 Then run them: \`delegate_to_agent\` starts a thread on a chosen agent, model and
-reasoning effort; \`send_to_thread\` follows up in one that already exists;
+reasoning effort; \`wait_for_thread\` waits for one to stop without costing you a
+turn per look; \`send_to_thread\` follows up in one that already exists;
 \`read_delegated_thread\` reads back what an agent actually did rather than what it
 claimed; \`answer_thread_question\` unblocks one waiting on a decision;
 \`stop_delegated_thread\` interrupts a running turn and \`revert_delegated_thread\`
@@ -402,12 +403,14 @@ success above a \`[failed]\` line is the case this exists for.
 
 Three states look identical from outside and are not:
 
-- **Running** — \`isRunning\`. Leave it alone; check again later.
+- **Running** — \`isRunning\`. Call \`wait_for_thread\` rather than checking in a
+  loop: waiting costs nothing, and every check you make by hand is a whole turn
+  spent asking a question the server could have answered when it changed.
 - **Blocked** — \`awaitingInput\` or \`awaitingApproval\`. It has stopped and
-  will never move on its own. Polling it is wasted. Either answer the question
-  with \`answer_thread_question\` when you actually know the answer, or tell the
-  user what is being asked. Answering for them when you are guessing is worse
-  than waiting. Approvals are the user's call.
+  will never move on its own — \`wait_for_thread\` returns immediately saying so.
+  Either answer the question with \`answer_thread_question\` when you actually
+  know the answer, or tell the user what is being asked. Answering for them when
+  you are guessing is worse than waiting. Approvals are the user's call.
 - **Finished** — neither. Read it and report.
 
 To correct or extend work, use \`send_to_thread\` rather than a fresh
