@@ -61,6 +61,8 @@ import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletion
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
+import { ProviderSnapshotStoreLive } from "./provider/Services/ProviderSnapshotStore.ts";
+import { ConductorClientLive } from "./agent/conductor/ConductorClient.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
@@ -360,9 +362,14 @@ const CloudManagedEndpointRuntimeLive = Layer.mergeAll(
   ),
 );
 
+// `OrchestrationLayerLive` used to be provided here. It moved down to the
+// instance-registry step so the drivers built there can reach the engine and
+// projections — the built-in agent orchestrates the other providers, and a
+// service provided above the drivers is invisible to them. Providing it once,
+// low, keeps a single engine (and so a single command queue) for everyone;
+// providing it in both places would quietly create two.
 const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(ProviderLayerLive),
-  Layer.provideMerge(OrchestrationLayerLive),
 );
 
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
@@ -382,7 +389,42 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
   // `providerInstances` hydration merges `settings.providers.<kind>`
   // with explicit `providerInstances` entries on boot.
-  Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+  // Orchestration and the snapshot store are merged into this step rather than
+  // taking their own, for two reasons. `.pipe()` has twenty overloads and this
+  // chain is at the limit — a twenty-first argument silently degrades the whole
+  // graph's inferred requirements to `any`, switching off missing-service
+  // checking everywhere instead of reporting anything.
+  //
+  // And they belong here. The drivers this layer builds include the built-in
+  // agent, which reaches the engine and projections to run the other providers
+  // and the store to see which providers exist. A service provided above the
+  // drivers is invisible to them; `provideMerge` still re-exports these upward,
+  // so `ProviderRegistryLive` above gets the same single store it writes to.
+  Layer.provideMerge(
+    Layer.provideMerge(
+      ProviderInstanceRegistryHydrationLive,
+      Layer.mergeAll(
+        OrchestrationLayerLive,
+        ProviderSnapshotStoreLive,
+        // Bound here rather than beside the driver so the engine, projections
+        // and store it needs are the same single instances everything else
+        // uses. The driver itself only ever names `ConductorClient`.
+        ConductorClientLive.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              OrchestrationLayerLive,
+              ProviderSnapshotStoreLive,
+              // The bare git driver, for the worktree a delegation runs in.
+              // `GitWorkflowLayerLive` cannot be used here: it carries
+              // `GitManager`, which needs text generation, which needs the
+              // provider instance registry this very block is building.
+              GitVcsDriver.layer,
+            ),
+          ),
+        ),
+      ),
+    ),
+  ),
   // Shared native/canonical NDJSON writers used by both the per-instance
   // drivers (native stream, written from inside each `<X>Adapter`) and
   // `ProviderService` (canonical stream, written after event normalization).

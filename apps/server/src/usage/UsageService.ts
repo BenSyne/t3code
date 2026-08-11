@@ -89,6 +89,15 @@ export class UsageService extends Context.Service<
   UsageService,
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
+    /**
+     * The current model rate table.
+     *
+     * Exposed so a provider that bills a key per token can price a turn as it
+     * happens, rather than waiting for the transcript scan that produces the
+     * Usage page. Empty until the table has loaded, which prices as `unpriced`
+     * — reported as unknown rather than as free.
+     */
+    readonly rateTable: Effect.Effect<RateTable>;
   }
 >()("t3/usage/UsageService") {}
 
@@ -113,6 +122,7 @@ export const layerTest = Layer.succeed(
         },
         scanDurationMs: 0,
       }),
+    rateTable: Effect.succeed(new Map()),
   }),
 );
 
@@ -414,7 +424,17 @@ export const make = Effect.gen(function* () {
     } satisfies UsageSummary;
   });
 
-  return { readSummary } as const;
+  return {
+    readSummary,
+    // Loaded on demand, not merely read. The Usage page was the only caller of
+    // `ensureRates`, so a user who had never opened it left this map empty and
+    // every turn priced as unpriced — the meter said "unknown" for models the
+    // table knew perfectly well. Within the TTL this is a clock read.
+    rateTable: Effect.gen(function* () {
+      yield* ensureRates();
+      return rates;
+    }),
+  } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

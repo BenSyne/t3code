@@ -12,11 +12,27 @@ function asBoolean(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
 
+/**
+ * Every field of the wire snapshot, present but nullable.
+ *
+ * `-?` is load-bearing. Without it the optional wire fields stay optional here,
+ * so a field added to the contract and read by the meter type-checks while the
+ * mapping below silently never populates it — which is how the cost figures
+ * shipped invisible. Required-but-nullable makes that a compile error.
+ */
 type NullableContextWindowUsage = {
-  readonly [Key in keyof ThreadTokenUsageSnapshot]: undefined extends ThreadTokenUsageSnapshot[Key]
+  readonly [Key in keyof ThreadTokenUsageSnapshot]-?: undefined extends ThreadTokenUsageSnapshot[Key]
     ? Exclude<ThreadTokenUsageSnapshot[Key], undefined> | null
     : ThreadTokenUsageSnapshot[Key];
 };
+
+type CostSource = NonNullable<ThreadTokenUsageSnapshot["costSource"]>;
+
+const COST_SOURCES: ReadonlyArray<CostSource> = ["providerReported", "modelPriced", "unpriced"];
+
+function asCostSource(value: unknown): CostSource | null {
+  return COST_SOURCES.find((source) => source === value) ?? null;
+}
 
 export type ContextWindowSnapshot = NullableContextWindowUsage & {
   readonly remainingTokens: number | null;
@@ -87,6 +103,9 @@ export function deriveLatestContextWindowSnapshot(
       lastReasoningOutputTokens: asFiniteNumber(payload?.lastReasoningOutputTokens),
       toolUses: asFiniteNumber(payload?.toolUses),
       durationMs: asFiniteNumber(payload?.durationMs),
+      totalCostUsd: asFiniteNumber(payload?.totalCostUsd),
+      lastCostUsd: asFiniteNumber(payload?.lastCostUsd),
+      costSource: asCostSource(payload?.costSource),
       compactsAutomatically: asBoolean(payload?.compactsAutomatically) ?? false,
       updatedAt: activity.createdAt,
     };

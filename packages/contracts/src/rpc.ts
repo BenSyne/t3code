@@ -249,6 +249,7 @@ export const WS_METHODS = {
   serverProbe: "server.probe",
   serverGetConfig: "server.getConfig",
   serverRefreshProviders: "server.refreshProviders",
+  serverConnectAgent: "server.connectAgent",
   serverUpdateProvider: "server.updateProvider",
   serverUpdateServer: "server.updateServer",
   serverUpdateServerWithProgress: "server.updateServerWithProgress",
@@ -341,6 +342,41 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
   }),
   success: ServerProviderUpdatedPayload,
   error: EnvironmentAuthorizationError,
+});
+
+/**
+ * What connecting a key concluded.
+ *
+ * Three cases rather than a boolean: a refused key and an address that did not
+ * answer send the user somewhere completely different, and anyone pointing this
+ * at a local server will meet the second one regularly.
+ */
+export const ConnectAgentResult = Schema.Union([
+  Schema.Struct({ _tag: Schema.Literal("Ok"), modelCount: Schema.Number }),
+  Schema.Struct({ _tag: Schema.Literal("Rejected"), detail: Schema.String }),
+  Schema.Struct({ _tag: Schema.Literal("Unreachable"), detail: Schema.String }),
+]);
+export type ConnectAgentResult = typeof ConnectAgentResult.Type;
+
+/**
+ * Verify a key and, only if it works, store it.
+ *
+ * Verification and storage are one call because they are one decision for the
+ * user. Storing first would leave a typo behind on the instance, and the first
+ * thing they would learn about it is a dead turn.
+ */
+export const WsServerConnectAgentRpc = Rpc.make(WS_METHODS.serverConnectAgent, {
+  payload: Schema.Struct({
+    instanceId: ProviderInstanceId,
+    /** One of the agent's backend slugs. */
+    backend: Schema.String,
+    /** Absent for a local server, which authenticates nothing. */
+    secret: Schema.optional(Schema.String),
+    /** Only meaningful for the OpenAI-compatible backend. */
+    baseUrl: Schema.optional(Schema.String),
+  }),
+  success: ConnectAgentResult,
+  error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvider, {
@@ -950,6 +986,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
+  WsServerConnectAgentRpc,
   WsServerUpdateProviderRpc,
   WsServerUpdateServerRpc,
   WsServerUpdateServerWithProgressRpc,

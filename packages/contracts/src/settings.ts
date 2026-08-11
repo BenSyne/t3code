@@ -223,13 +223,28 @@ const makeBinaryPathSetting = (fallback: string) =>
     Schema.withDecodingDefault(Effect.succeed(fallback)),
   );
 
-export type ProviderSettingsFormControl = "text" | "password" | "textarea" | "switch";
+export type ProviderSettingsFormControl = "text" | "password" | "textarea" | "switch" | "select";
+
+export interface ProviderSettingsFormOption {
+  readonly value: string;
+  readonly label: string;
+}
 
 export interface ProviderSettingsFormAnnotation {
   readonly control?: ProviderSettingsFormControl | undefined;
   readonly placeholder?: string | undefined;
   readonly hidden?: boolean | undefined;
   readonly clearWhenEmpty?: "omit" | "persist" | undefined;
+  /**
+   * Choices for a `select` field.
+   *
+   * Listed here rather than read off the schema's literals, because the
+   * literals are wire values (`openai-compat`) and a person needs to see a
+   * name (`OpenAI-compatible`). Kept honest by a test asserting every literal
+   * appears exactly once, so adding a backend and forgetting the label fails
+   * the build rather than shipping a value nobody can pick.
+   */
+  readonly options?: ReadonlyArray<ProviderSettingsFormOption> | undefined;
 }
 
 export interface ProviderSettingsFormSchemaAnnotation {
@@ -471,6 +486,150 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
 );
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
 
+/**
+ * Settings for the built-in agent.
+ *
+ * Unlike every other provider here there is no `binaryPath`: the agent is
+ * compiled into the server, so there is nothing on disk to point at. What it
+ * needs instead is a credential, and that is supplied as the *name* of an
+ * environment variable rather than the key itself — the value lives in the
+ * instance environment with `sensitive: true`, which keeps it out of
+ * settings.json and off the wire. Putting an `apiKey` field here would write
+ * the user's key to disk in plain text.
+ */
+/**
+ * The backends a T3 Orchestrator instance can point at, in the order they are offered.
+ *
+ * OpenRouter first because it is the default and the easiest starting point;
+ * OpenAI-compatible last because it is the escape hatch, and it is the only
+ * one that needs a Base URL.
+ */
+export const T3_AGENT_BACKEND_OPTIONS = [
+  { value: "openrouter", label: "OpenRouter" },
+  { value: "anthropic", label: "Anthropic" },
+  { value: "openai", label: "OpenAI" },
+  { value: "cerebras", label: "Cerebras" },
+  { value: "openai-compat", label: "OpenAI-compatible" },
+] as const satisfies ReadonlyArray<ProviderSettingsFormOption>;
+
+export const T3AgentSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    backend: Schema.Literals([
+      "anthropic",
+      "openai",
+      "openrouter",
+      "cerebras",
+      "openai-compat",
+    ]).pipe(
+      // OpenRouter is the default because it is the one key that reaches every
+      // model here — Anthropic, OpenAI, and the open-weight ones — so the
+      // out-of-the-box path is a single signup rather than a decision about
+      // which vendor to commit to first.
+      Schema.withDecodingDefault(Effect.succeed("openrouter" as const)),
+      Schema.annotateKey({
+        title: "Provider",
+        description:
+          "Where requests go. OpenRouter reaches almost every model with one key and is the easiest place to start. Cerebras runs open-weight models very fast. Choose OpenAI-compatible to use Ollama, LM Studio, or any other server that speaks the OpenAI API.",
+        providerSettingsForm: {
+          // A list, not a text box. These are exact wire values — typing
+          // "OpenRouter" or "open-router" produces an instance that fails at
+          // the first request with nothing on screen explaining why.
+          control: "select",
+          options: T3_AGENT_BACKEND_OPTIONS,
+          // The value the user is looking at should be the value that is
+          // stored, rather than an omission that happens to decode to the
+          // same thing today.
+          clearWhenEmpty: "persist",
+        },
+      }),
+    ),
+    credentialEnvVar: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("OPENROUTER_API_KEY")),
+      Schema.annotateKey({
+        title: "API key variable",
+        description:
+          "Name of the environment variable holding the API key. Set its value in Environment variables above, marked sensitive, so it is stored as a secret rather than in settings.",
+        providerSettingsForm: {
+          placeholder: "OPENROUTER_API_KEY",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    baseUrl: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Base URL",
+        description:
+          "Required for OpenAI-compatible servers. Leave blank elsewhere — including for Cerebras, which has a fixed endpoint — to use the provider's own.",
+        providerSettingsForm: {
+          placeholder: "http://localhost:11434/v1",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    defaultModel: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Default model",
+        description: "Leave blank to use the built-in default.",
+        providerSettingsForm: {
+          // An OpenRouter slug, to match the default provider — and a
+          // `vendor/model` one specifically, since that shape is the thing
+          // people get wrong on their first OpenRouter instance.
+          placeholder: "anthropic/claude-sonnet-5",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    /**
+     * MCP servers, in the same shape every other agent uses, so a config the
+     * user already wrote can be pasted in unchanged.
+     */
+    mcpServers: Schema.Record(Schema.String, Schema.Unknown).pipe(
+      Schema.withDecodingDefault(Effect.succeed({})),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    /**
+     * On by default: orchestrating the agents you already have is most of the
+     * point of this one, and an instance that ships with it off mostly teaches
+     * people that the feature does not exist.
+     *
+     * The cost it can reach is bounded rather than absent. Delegation spends
+     * whatever key the *target* provider holds, which for a CLI signed in to a
+     * subscription is nothing per turn and for an API-key instance is real
+     * money. What keeps that from running away is the fleet limit, the ban on
+     * targeting another instance of itself, and approvals staying off — none
+     * of which this switch changes. Turning it off removes the tools from the
+     * prompt entirely, so the agent cannot try and be refused.
+     */
+    orchestrateOtherAgents: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({
+        title: "Let this agent run other agents",
+        description:
+          "Allows delegating work to Codex, Claude, Cursor, Grok, or OpenCode, following it, and tidying up after it — reading results, sending follow-ups, and settling or archiving threads. Delegated threads appear in the sidebar and can be interrupted or reverted like any other. It can never delete anything or change what another thread is allowed to do. Uses those providers' own credits.",
+        // The form does not infer a control from the schema type — without
+        // this a boolean renders as a text box you cannot meaningfully type
+        // into. `persist` because the value the user chose is the point: an
+        // omitted `false` is indistinguishable from never having decided.
+        providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
+      }),
+    ),
+  },
+  {
+    order: ["backend", "credentialEnvVar", "baseUrl", "defaultModel"],
+  },
+);
+export type T3AgentSettings = typeof T3AgentSettings.Type;
+
 export const ObservabilitySettings = Schema.Struct({
   otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
@@ -545,6 +704,15 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /**
+   * Whether the built-in agent has ever been offered on this machine.
+   *
+   * Set the first time it is provisioned, and never cleared. Without it,
+   * deleting the built-in agent would only last until the next restart, because
+   * "no instance exists" is exactly the condition that provisions one. Someone
+   * who removed it on purpose should not have to keep removing it.
+   */
+  builtInAgentOffered: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   backgroundActivity: BackgroundActivitySettings,
   // Legacy flat fields retained for old settings files and old clients. New
   // consumers should resolve `backgroundActivity` instead.
@@ -708,6 +876,7 @@ export const ServerSettingsPatch = Schema.Struct({
   // Server settings
   enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
+  builtInAgentOffered: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),

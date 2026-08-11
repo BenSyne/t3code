@@ -6,12 +6,14 @@ import * as Schema from "effect/Schema";
 import type {
   ProviderSettingsFormAnnotation,
   ProviderSettingsFormControl,
+  ProviderSettingsFormOption,
   ProviderSettingsFormSchemaAnnotation,
 } from "@t3tools/contracts";
 
 import { cn } from "../../lib/utils";
 import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import type { ProviderClientDefinition } from "./providerDriverMeta";
@@ -24,6 +26,8 @@ export interface ProviderSettingsFieldModel {
   readonly placeholder?: string | undefined;
   readonly clearWhenEmpty: "omit" | "persist";
   readonly defaultBooleanValue?: boolean | undefined;
+  readonly defaultStringValue?: string | undefined;
+  readonly options?: ReadonlyArray<ProviderSettingsFormOption> | undefined;
 }
 
 function titleizeFieldKey(key: string): string {
@@ -59,6 +63,24 @@ function readProviderSettingsFormSchemaAnnotation(
   definition: ProviderClientDefinition,
 ): ProviderSettingsFormSchemaAnnotation {
   return Schema.resolveAnnotations(definition.settingsSchema)?.providerSettingsFormSchema ?? {};
+}
+
+/**
+ * The value a field falls back to when the config does not mention it.
+ *
+ * Decoding `undefined` through the field's own schema, so the form shows what
+ * the server would actually use rather than a second copy of the default kept
+ * in sync by hand. A select with no value is the case this exists for: it
+ * renders as an empty box that hides which choices exist at all.
+ */
+function readFieldStringDefault(
+  fieldSchema: ProviderClientDefinition["settingsSchema"]["fields"][string],
+): string | undefined {
+  const decodeDefault = Schema.decodeUnknownOption(fieldSchema as Schema.Decoder<unknown>);
+  const decoded = decodeDefault(undefined);
+  return Option.isSome(decoded) && typeof decoded.value === "string" && decoded.value !== ""
+    ? decoded.value
+    : undefined;
 }
 
 function readFieldBooleanDefault(
@@ -105,6 +127,14 @@ export function deriveProviderSettingsFields(
           clearWhenEmpty: formAnnotation.clearWhenEmpty ?? "omit",
           ...(formAnnotation.control === "switch"
             ? { defaultBooleanValue: readFieldBooleanDefault(fieldSchema) }
+            : {}),
+          ...(formAnnotation.control === "select"
+            ? {
+                defaultStringValue: readFieldStringDefault(fieldSchema),
+                ...(formAnnotation.options !== undefined
+                  ? { options: formAnnotation.options }
+                  : {}),
+              }
             : {}),
         } satisfies ProviderSettingsFieldModel,
       ];
@@ -202,7 +232,14 @@ function ProviderSettingsFieldRow({
       <FieldFrame variant={variant}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            {label}
+            {/*
+              Blocked explicitly. Every other control puts the description after
+              an input inside a <label>, so it starts a new line for free; here
+              the two are bare siblings, and in the non-card variant the
+              description carries no `block` — so the title ran straight into
+              its own description with no space between them.
+            */}
+            <span className="block">{label}</span>
             {description}
           </div>
           <Switch
@@ -213,6 +250,42 @@ function ProviderSettingsFieldRow({
             aria-label={field.label}
           />
         </div>
+      </FieldFrame>
+    );
+  }
+
+  if (field.control === "select" && field.options !== undefined) {
+    // Falls back to the schema default rather than showing blank, so the field
+    // reads as the choice it will actually behave as. An unset select is the
+    // one control where emptiness is never the user's decision.
+    const selected = readProviderConfigString(value, field.key) || (field.defaultStringValue ?? "");
+    return (
+      <FieldFrame variant={variant}>
+        <label htmlFor={inputId} className={cn(variant === "card" && "block")}>
+          {label}
+          <Select
+            value={selected}
+            onValueChange={(next) => {
+              if (typeof next === "string") {
+                onChange(nextProviderConfigWithFieldValue(value, field, next));
+              }
+            }}
+          >
+            <SelectTrigger id={inputId} className={cn("w-full", variant === "card" && "mt-1.5")}>
+              <SelectValue>
+                {field.options.find((option) => option.value === selected)?.label ?? selected}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup alignItemWithTrigger={false}>
+              {field.options.map((option) => (
+                <SelectItem hideIndicator key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+          {description}
+        </label>
       </FieldFrame>
     );
   }

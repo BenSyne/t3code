@@ -48,6 +48,10 @@ overrides:
   '@clerk/expo': 4.2.0
   '@clerk/react': 6.12.10
   '@clerk/shared': 4.25.10
+  '@effect/ai-anthropic': 4.0.0-beta.103
+  '@effect/ai-openai': 4.0.0-beta.103
+  '@effect/ai-openai-compat': 4.0.0-beta.103
+  '@effect/ai-openrouter': 4.0.0-beta.103
   '@effect/atom-react': 4.0.0-beta.103
   '@effect/platform-bun': 4.0.0-beta.103
   '@effect/platform-node': 4.0.0-beta.103
@@ -445,6 +449,18 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.3.170
         version: 0.3.170(@anthropic-ai/sdk@0.93.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
+      '@effect/ai-anthropic':
+        specifier: 4.0.0-beta.103
+        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+      '@effect/ai-openai':
+        specifier: 4.0.0-beta.103
+        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+      '@effect/ai-openai-compat':
+        specifier: 4.0.0-beta.103
+        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+      '@effect/ai-openrouter':
+        specifier: 4.0.0-beta.103
+        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
       '@effect/platform-bun':
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))(utf-8-validate@6.0.6)
@@ -1939,6 +1955,26 @@ packages:
 
   '@drizzle-team/brocli@0.12.0':
     resolution: {integrity: sha512-mlUE+rZ8CatQekLhnaiN91Iemdd+e2gFKooGlnRB3oPTL3VghLfX24dx7HrzMNeC1JrIB/0kpsfyty3f5HNfxQ==}
+
+  '@effect/ai-anthropic@4.0.0-beta.103':
+    resolution: {integrity: sha512-qJX074in2TTh5gIPM8//haWaRs/JLI/IjJGH9aGSIFBxDxk3V2FQEJ//RGsE6EMbxjCIoSOZFY48mH3RYuiPBw==}
+    peerDependencies:
+      effect: 4.0.0-beta.103
+
+  '@effect/ai-openai-compat@4.0.0-beta.103':
+    resolution: {integrity: sha512-BJi09Yz5XJci7npAFiUmV7kqI8gOi4pqxHP9Y9otaz6sKegPtgoF+U8lxPUe259C8bfW9N7Fq0k+LdVZepsd5w==}
+    peerDependencies:
+      effect: 4.0.0-beta.103
+
+  '@effect/ai-openai@4.0.0-beta.103':
+    resolution: {integrity: sha512-GGspYFnN9ZfWVYSpFgURlljpO3BUJt9+vJf28F5t7eQBgla3oE8iDSuDosgdna+PYidn5O+8DVbzByht5I5k0w==}
+    peerDependencies:
+      effect: 4.0.0-beta.103
+
+  '@effect/ai-openrouter@4.0.0-beta.103':
+    resolution: {integrity: sha512-M2trYSpL6nBEjBT/c2skFyVCnvkCfFohnoUykMi3zXv6FqQulZNSJI7JUS2jbg0QnhHhTbIGskAnMEftsk4F/g==}
+    peerDependencies:
+      effect: 4.0.0-beta.103
 
   '@effect/atom-react@4.0.0-beta.103':
     resolution: {integrity: sha512-1HJ+Cyq4ssLnH2UZ8OVnhtMGAySabtzZo7imKC+vEfxOW3lvJYpGZeicxQX5Ii/7AdvlR+19p/6K2a5IPKYAow==}
@@ -11772,6 +11808,22 @@ snapshots:
       tslib: 2.8.1
 
   '@drizzle-team/brocli@0.12.0': {}
+
+  '@effect/ai-anthropic@4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))':
+    dependencies:
+      effect: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+
+  '@effect/ai-openai-compat@4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))':
+    dependencies:
+      effect: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+
+  '@effect/ai-openai@4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))':
+    dependencies:
+      effect: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+
+  '@effect/ai-openrouter@4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))':
+    dependencies:
+      effect: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
 
   '@effect/atom-react@4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))(react@19.2.3)(scheduler@0.27.0)':
     dependencies:

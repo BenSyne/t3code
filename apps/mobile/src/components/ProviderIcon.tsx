@@ -58,6 +58,18 @@ export function ProviderIcon(props: ProviderIconProps) {
     );
   }
 
+  if (props.provider === "t3agent") {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <Path
+          fill={mono}
+          d="M12 2.5 3.5 7v10L12 21.5 20.5 17V7L12 2.5Zm0 2.31 6.5 3.44v7.5L12 19.19 5.5 15.75v-7.5L12 4.81Z"
+        />
+        <Path fill={mono} d="M8.25 9.25h7.5v1.9h-2.8v5.1h-1.9v-5.1h-2.8v-1.9Z" />
+      </Svg>
+    );
+  }
+
   // codex (and unknown drivers)
   return (
     <Svg width={size} height={size} viewBox="0 0 256 260" fill="none">

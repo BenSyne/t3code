@@ -322,6 +322,21 @@ export const ThreadTokenUsageSnapshot = Schema.Struct({
   toolUses: Schema.optional(NonNegativeInt),
   durationMs: Schema.optional(NonNegativeInt),
   compactsAutomatically: Schema.optional(Schema.Boolean),
+  /**
+   * What this thread has cost so far, in US dollars.
+   *
+   * Only meaningful for a provider billing a key per token. The CLI-based
+   * providers run against a subscription, where a per-token figure would be
+   * a fiction, so they leave this absent rather than reporting zero.
+   */
+  totalCostUsd: Schema.optional(Schema.Number),
+  /** What the most recent turn cost, so the price of one exchange is visible. */
+  lastCostUsd: Schema.optional(Schema.Number),
+  /**
+   * How the figure was arrived at. `unpriced` means the model is not in the
+   * rate table — shown as unknown rather than as zero, which would read as free.
+   */
+  costSource: Schema.optional(Schema.Literals(["providerReported", "modelPriced", "unpriced"])),
 });
 export type ThreadTokenUsageSnapshot = typeof ThreadTokenUsageSnapshot.Type;
 
