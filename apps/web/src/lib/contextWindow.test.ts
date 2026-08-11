@@ -68,6 +68,40 @@ describe("contextWindow", () => {
     expect(formatContextWindowTokens(258_000)).toBe("258k");
   });
 
+  it("carries the cost figures through to the meter", () => {
+    // These travel the whole way from the server and were dropped here, so the
+    // meter read undefined and rendered nothing at all — a feature that existed
+    // end to end and was invisible.
+    const snapshot = deriveLatestContextWindowSnapshot([
+      makeActivity("activity-1", "context-window.updated", {
+        usedTokens: 20_000,
+        maxTokens: 1_000_000,
+        totalCostUsd: 0.9412,
+        lastCostUsd: 0.0312,
+        costSource: "modelPriced",
+      }),
+    ]);
+
+    expect(snapshot?.totalCostUsd).toBe(0.9412);
+    expect(snapshot?.lastCostUsd).toBe(0.0312);
+    expect(snapshot?.costSource).toBe("modelPriced");
+  });
+
+  it("reports an unrecognised cost source as absent rather than passing it on", () => {
+    const snapshot = deriveLatestContextWindowSnapshot([
+      makeActivity("activity-1", "context-window.updated", {
+        usedTokens: 20_000,
+        totalCostUsd: 1.5,
+        costSource: "guessed",
+      }),
+    ]);
+
+    // The meter keys its whole cost block off the source, so an unknown one
+    // hides the figures instead of labelling them wrongly.
+    expect(snapshot?.costSource).toBeNull();
+    expect(snapshot?.lastCostUsd).toBeNull();
+  });
+
   it("includes total processed tokens when available", () => {
     const snapshot = deriveLatestContextWindowSnapshot([
       makeActivity("activity-1", "context-window.updated", {
