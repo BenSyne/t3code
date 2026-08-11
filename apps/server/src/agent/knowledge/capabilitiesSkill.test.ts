@@ -7,6 +7,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 
 import { unavailableOrchestrationClient } from "../conductor/ConductorClient.ts";
 import { conductorContributor } from "../conductor/conductorTools.ts";
+import { CORE_TOOL_NAMES } from "../tools/core.ts";
 import type { AgentToolContext } from "../tools/registry.ts";
 import { BUILTIN_SKILLS } from "./builtinSkills.ts";
 
@@ -37,7 +38,8 @@ const conductorToolNames = Effect.gen(function* () {
 }).pipe(Effect.provide(NodeServices.layer));
 
 /** Named in the skill for reasons other than being an orchestration tool. */
-const CORE_TOOLS = new Set(["read", "write", "edit", "glob", "grep", "bash", "skill", "task"]);
+// From the real list, not a copy of it — a copy is the staleness this file warns about.
+const CORE_TOOLS = new Set<string>([...CORE_TOOL_NAMES, "skill", "task"]);
 
 describe("the capabilities skill", () => {
   // Prose listing tools goes stale the moment one is added, and the failure is

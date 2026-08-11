@@ -130,6 +130,8 @@ thread, via the branch control near the composer.`,
 - \`read\`, \`write\`, \`edit\` — files, confined to the project directory
 - \`glob\`, \`grep\` — find files by name or contents, skipping build output
 - \`bash\` — run a command, with a timeout and bounded output
+- \`webfetch\` — fetch a URL and read it as text, gated like bash with the URL shown
+- \`update_plan\` — keep a step-by-step checklist the user watches in the timeline
 - \`skill\` — load a skill's full instructions on demand
 - \`task\` — hand a self-contained job to a fresh sub-agent
 

@@ -37,6 +37,14 @@ same as off — some models reason unless told not to.
 Only the levels a given model actually accepts are offered, so the list changes as you switch
 models. A model with no reasoning control shows none.
 
+### What a conversation costs
+
+On the Anthropic backend, the growing conversation is marked for prompt caching, so each turn
+re-bills the repeated prefix at cache rates rather than full price — on a long thread that is
+most of the bill. OpenAI applies its caching automatically. A dropped connection or a rate limit
+is retried quietly with backoff rather than failing your turn; you pay for requests that ran, not
+for the retry logic.
+
 ### Running against a local model
 
 Choose **OpenAI-compatible** and set the **Base URL** to your server:
@@ -58,6 +66,12 @@ this list has never heard of.
 **Files and search** — read, write, edit, glob, and grep, all confined to the project directory.
 
 **Commands** — run builds, tests, and git through a shell, with a timeout and bounded output.
+
+**The web** — fetch a URL you point it at and read it as text. Fetches go through the same
+approval flow as commands, with the URL as what you are asked about.
+
+**A visible plan** — on multi-step work it keeps a checklist in the timeline, ticking steps off
+as they finish, so a long task reads as progress instead of silence.
 
 **Project instructions** — reads `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, and
 `.github/copilot-instructions.md` from the repository root, so rules you already wrote apply here
