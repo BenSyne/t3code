@@ -48,6 +48,7 @@ const client = (overrides: Partial<OrchestrationClient>): OrchestrationClient =>
   getThread: () => Effect.succeed(undefined),
   readThread: () => Effect.succeed(""),
   pendingInput: () => Effect.succeed([]),
+  createWorktree: () => Effect.succeed({ _tag: "Failed" as const, detail: "not in this test" }),
   ...overrides,
 });
 

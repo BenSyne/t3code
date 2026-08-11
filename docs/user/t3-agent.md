@@ -117,6 +117,14 @@ is how you stay in the loop; leaving it off means T3 Orchestrator tells you what
 for you. Answering a _question_ a thread asked is different and allowed, but only on threads T3 Orchestrator
 started itself — it will not put words in your mouth in a conversation it was never part of.
 
+Each thread it starts gets its own **git worktree and branch**, the same isolation you get from the
+branch control, so a fan-out cannot have two agents overwriting each other's files. It tells you the
+branch when it delegates; the work is not in your checkout until you merge it.
+
+Worth knowing: a worktree starts from the current commit, so uncommitted changes in your own checkout
+are not in it. If you want a delegate working on something you have in progress, commit it first —
+or ask for the work to run in your directory instead, which it will do one task at a time.
+
 There is no cap on how many delegations run at once — swarming is the point — so a large fan-out
 spends a large amount at once on whatever keys those providers use. It can never delegate to another
 T3 Orchestrator instance, though: an agent that can start copies of itself is unbounded recursion rather than a

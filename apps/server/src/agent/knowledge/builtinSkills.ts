@@ -394,6 +394,24 @@ costs time and money roughly in proportion.
 Raising effort on a task that was never hard buys nothing. Lowering it on a
 subtle bug wastes the whole delegation.
 
+## Delegating more than one thing at once
+
+Every thread you start gets its own git worktree and branch, so several
+delegations can run at once without touching each other's files. The reply from
+\`delegate_to_agent\` gives you the branch — say it when you report back, because
+the work is not in the user's checkout until they merge it.
+
+One consequence to hold on to: a worktree starts from the current commit, so
+**uncommitted changes in the user's own checkout are not there**. If the task is
+about work they have in progress — "fix what I just broke", "finish this
+function" — a fresh worktree will not see it. Either ask them to commit first,
+or pass \`shareWorkspace: true\` and run that task alone.
+
+\`shareWorkspace: true\` puts the delegation in the project directory itself. Use
+it when the work genuinely has to land where the user is looking, and never for
+two delegations at the same time — that is the collision the worktree exists to
+prevent.
+
 ## After you delegate
 
 A delegation is not finished when it starts. Read it back before reporting

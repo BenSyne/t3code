@@ -128,6 +128,18 @@ describe("the routing skill", () => {
     expect(body).toMatch(/every check you make by hand is a whole turn/);
   });
 
+  it("explains that a delegation lands on a branch, not in the user's checkout", () => {
+    // Isolation is worthless if the agent never mentions where the work went.
+    expect(body).toMatch(/its own git worktree and branch/);
+    expect(body).toMatch(/until they merge it/);
+  });
+
+  it("warns that a worktree cannot see uncommitted work", () => {
+    // The trap: "fix what I just broke" against a fresh worktree silently
+    // operates on the last commit instead of what the user is looking at.
+    expect(body).toMatch(/uncommitted changes in the user's own checkout are not there/);
+  });
+
   it("sends corrections into the existing thread rather than a new one", () => {
     expect(body).toContain("send_to_thread");
     expect(body).toMatch(/Starting over throws away/);

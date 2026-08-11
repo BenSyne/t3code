@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
+import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderSnapshotStore } from "../../provider/Services/ProviderSnapshotStore.ts";
 import { reasoningEffortsFor } from "../model/reasoning.ts";
@@ -50,6 +51,11 @@ export const makeLiveOrchestrationClient = Effect.gen(function* () {
   const engine = yield* OrchestrationEngineService;
   const projections = yield* ProjectionSnapshotQuery;
   const providerSnapshots = yield* ProviderSnapshotStore;
+  // The driver, not `GitWorkflowService`. That wrapper adds a git-availability
+  // precheck and pulls in `GitManager`, which needs text generation, which
+  // needs the provider registry — the very thing being built one layer out.
+  // Depending on it here is a cycle; the driver does the work anyway.
+  const git = yield* GitVcsDriver.GitVcsDriver;
 
   const dispatch: OrchestrationClient["dispatch"] = (
     command: DispatchableClientOrchestrationCommand,
@@ -170,6 +176,25 @@ export const makeLiveOrchestrationClient = Effect.gen(function* () {
       Effect.catchCause(() => Effect.succeed([])),
     );
 
+  // `HEAD` as the base, so a delegation branches from whatever the user is on
+  // rather than an assumed default branch that may not exist.
+  const createWorktree: OrchestrationClient["createWorktree"] = (input) =>
+    git
+      .createWorktree({ cwd: input.cwd, refName: "HEAD", newRefName: input.branch, path: null })
+      .pipe(
+        Effect.map(
+          (result) =>
+            ({
+              _tag: "Created",
+              path: result.worktree.path,
+              refName: result.worktree.refName,
+            }) as const,
+        ),
+        Effect.catchCause((cause) =>
+          Effect.succeed({ _tag: "Failed", detail: describe(cause) } as const),
+        ),
+      );
+
   return {
     dispatch,
     listProviders,
@@ -179,5 +204,6 @@ export const makeLiveOrchestrationClient = Effect.gen(function* () {
     getThread,
     readThread,
     pendingInput,
+    createWorktree,
   } satisfies OrchestrationClient;
 });

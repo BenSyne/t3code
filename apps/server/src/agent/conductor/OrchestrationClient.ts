@@ -112,4 +112,22 @@ export interface OrchestrationClient {
   readonly readThread: (threadId: ThreadId) => Effect.Effect<string>;
   /** The questions a thread is blocked on, if any. */
   readonly pendingInput: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<PendingUserInput>>;
+  /**
+   * A checkout of its own for delegated work.
+   *
+   * The one member here that is not an orchestration command, and it earns the
+   * exception: delegations share a project, so without this a fan-out is
+   * several agents editing the same files. Still narrow — a branch and a path,
+   * the same thing the worktree button makes, not a way to run git.
+   *
+   * Failure is a value: a repository with nothing to branch from is something
+   * the agent should report and work around, not a dead turn.
+   */
+  readonly createWorktree: (input: {
+    readonly cwd: string;
+    readonly branch: string;
+  }) => Effect.Effect<
+    | { readonly _tag: "Created"; readonly path: string; readonly refName: string }
+    | { readonly _tag: "Failed"; readonly detail: string }
+  >;
 }

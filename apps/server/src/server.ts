@@ -410,7 +410,17 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
         // and store it needs are the same single instances everything else
         // uses. The driver itself only ever names `ConductorClient`.
         ConductorClientLive.pipe(
-          Layer.provide(Layer.mergeAll(OrchestrationLayerLive, ProviderSnapshotStoreLive)),
+          Layer.provide(
+            Layer.mergeAll(
+              OrchestrationLayerLive,
+              ProviderSnapshotStoreLive,
+              // The bare git driver, for the worktree a delegation runs in.
+              // `GitWorkflowLayerLive` cannot be used here: it carries
+              // `GitManager`, which needs text generation, which needs the
+              // provider instance registry this very block is building.
+              GitVcsDriver.layer,
+            ),
+          ),
         ),
       ),
     ),

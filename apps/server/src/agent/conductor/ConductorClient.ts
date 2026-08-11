@@ -28,6 +28,8 @@ export const unavailableOrchestrationClient: OrchestrationClient = {
   getThread: () => Effect.succeed(undefined),
   readThread: () => Effect.succeed("Orchestration is not available here."),
   pendingInput: () => Effect.succeed([]),
+  createWorktree: () =>
+    Effect.succeed({ _tag: "Failed" as const, detail: "Orchestration is not available here." }),
 };
 
 export const ConductorClientUnavailable = Layer.succeed(

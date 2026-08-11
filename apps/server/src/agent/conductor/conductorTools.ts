@@ -42,6 +42,23 @@ export interface ConductorContext {
   readonly nowIso: Effect.Effect<string>;
 }
 
+/**
+ * A branch name from a thread title.
+ *
+ * Git refuses plenty of what a model will happily put in a title, so this keeps
+ * to a conservative alphabet and leans on the thread id for uniqueness — two
+ * delegations both called "fix the tests" must not collide on one branch.
+ */
+export function delegationBranchName(title: string, threadId: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32)
+    .replace(/-+$/g, "");
+  return `t3-agent/${slug === "" ? "task" : slug}-${threadId.slice(0, 8)}`;
+}
+
 const listProviders = (context: ConductorContext): AgentTool =>
   defineTool(
     Tool.make("list_providers", {
@@ -218,8 +235,9 @@ const delegate = (context: ConductorContext): AgentTool =>
     Tool.make("delegate_to_agent", {
       description:
         "Start a thread with another coding agent and send it a task. Returns the thread id. " +
-        "The thread runs on its own — use wait_for_thread to wait for it, then " +
-        "read_delegated_thread to collect the result.",
+        "Runs in its own git worktree by default, so several delegations can work at once " +
+        "without overwriting each other; the reply gives you the branch, which the user merges. " +
+        "Use wait_for_thread to wait for it, then read_delegated_thread to collect the result.",
       parameters: Schema.Struct({
         providerInstanceId: Schema.String.annotate({
           description: "From list_providers.",
@@ -240,9 +258,20 @@ const delegate = (context: ConductorContext): AgentTool =>
               "and debugging, lower it for mechanical work.",
           }),
         ),
+        shareWorkspace: optionalParam(
+          Schema.Boolean.annotate({
+            description:
+              "Set true to run in the project's own working directory instead of a worktree. " +
+              "Only for work that must land where the user is already looking, and never for two " +
+              "delegations at once — they will overwrite each other.",
+          }),
+        ),
       }),
       success: Schema.Struct({
         threadId: Schema.String,
+        /** Where the work will land, when it was given a checkout of its own. */
+        worktreePath: Schema.optional(Schema.String),
+        branch: Schema.optional(Schema.String),
         /** Present only when the requested reasoning level was adjusted. */
         note: Schema.optional(Schema.String),
       }),
@@ -315,6 +344,36 @@ const delegate = (context: ConductorContext): AgentTool =>
         }
       }
 
+      // Delegations share a project, so without this a fan-out is several
+      // agents editing one directory — two on the same file overwrite each
+      // other silently. Made before the thread, so the thread is never created
+      // pointing at a checkout that does not exist.
+      let isolation: { readonly path: string; readonly refName: string } | null = null;
+      if (params.shareWorkspace !== true) {
+        const projects = yield* context.client.listProjects;
+        const project = projects.find((candidate) => String(candidate.id) === params.projectId);
+        if (project === undefined) {
+          return yield* toolFailure(
+            `No project with id "${params.projectId}". Call list_projects first.`,
+          );
+        }
+        const attempt = yield* context.client.createWorktree({
+          cwd: project.workspaceRoot,
+          branch: delegationBranchName(params.title, String(threadId)),
+        });
+        if (attempt._tag === "Failed") {
+          // Not quietly shared instead: the caller asked for work that is safe
+          // to run alongside other work, and handing them the shared directory
+          // is how two agents overwrite each other with nothing to explain it.
+          return yield* toolFailure(
+            `Could not make an isolated worktree for this task: ${attempt.detail}. ` +
+              "Fix the repository, or pass shareWorkspace: true if this work really should run " +
+              "in the project's own directory.",
+          );
+        }
+        isolation = { path: attempt.path, refName: attempt.refName };
+      }
+
       const created = yield* context.client.dispatch({
         type: "thread.create",
         commandId: CommandId.make(yield* context.nextId),
@@ -348,8 +407,8 @@ const delegate = (context: ConductorContext): AgentTool =>
         // threads never hit that because they default to full-access.
         runtimeMode: "full-access" satisfies RuntimeMode,
         interactionMode: "default",
-        branch: null,
-        worktreePath: null,
+        branch: isolation?.refName ?? null,
+        worktreePath: isolation?.path ?? null,
         createdAt: yield* context.nowIso,
       });
 
@@ -380,6 +439,7 @@ const delegate = (context: ConductorContext): AgentTool =>
 
       return {
         threadId: String(threadId),
+        ...(isolation === null ? {} : { worktreePath: isolation.path, branch: isolation.refName }),
         ...(effortNote === undefined ? {} : { note: effortNote }),
       };
     }),
