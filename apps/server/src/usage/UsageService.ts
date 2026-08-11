@@ -426,10 +426,14 @@ export const make = Effect.gen(function* () {
 
   return {
     readSummary,
-    // Read at call time: the table is refreshed in the background, and a
-    // provider pricing a turn should get the newest one rather than whatever
-    // was loaded when it started.
-    rateTable: Effect.sync(() => rates),
+    // Loaded on demand, not merely read. The Usage page was the only caller of
+    // `ensureRates`, so a user who had never opened it left this map empty and
+    // every turn priced as unpriced — the meter said "unknown" for models the
+    // table knew perfectly well. Within the TTL this is a clock read.
+    rateTable: Effect.gen(function* () {
+      yield* ensureRates();
+      return rates;
+    }),
   } as const;
 });
 

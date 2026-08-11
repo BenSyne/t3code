@@ -19,7 +19,16 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 
+import type { ModelRate } from "../../usage/usagePricing.ts";
 import { OPENROUTER_EFFORTS, type CatalogModel } from "./ModelCatalog.ts";
+
+/** USD per token, as strings. Absent fields mean the model does not charge separately. */
+export interface OpenRouterPricing {
+  readonly prompt?: string | undefined;
+  readonly completion?: string | undefined;
+  readonly input_cache_read?: string | undefined;
+  readonly input_cache_write?: string | undefined;
+}
 
 /** As much of one API entry as selection reads. Everything else is ignored. */
 export interface OpenRouterApiModel {
@@ -29,6 +38,59 @@ export interface OpenRouterApiModel {
   readonly created?: number | undefined;
   readonly context_length?: number | undefined;
   readonly supported_parameters?: ReadonlyArray<string> | undefined;
+  readonly pricing?: OpenRouterPricing | undefined;
+}
+
+function perToken(value: string | undefined): number | null {
+  if (value === undefined) return null;
+  const parsed = Number(value);
+  // Zero is a real price — free models list "0" — so only reject the unusable.
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/**
+ * What one model costs per token, or null when the feed does not say.
+ *
+ * Worth preferring over the shared LiteLLM table for anything served here:
+ * these are the rates OpenRouter will actually bill, they cover every model in
+ * the feed rather than the ones LiteLLM has caught up with, and two thirds of
+ * them carry real cache rates.
+ *
+ * A model quoting no cache rate is priced at its full input rate rather than
+ * as free, matching how the shared table treats the same gap.
+ */
+export function rateOf(model: OpenRouterApiModel): ModelRate | null {
+  const input = perToken(model.pricing?.prompt);
+  const output = perToken(model.pricing?.completion);
+  if (input === null || output === null) return null;
+  return {
+    inputCostPerToken: input,
+    outputCostPerToken: output,
+    cacheReadCostPerToken: perToken(model.pricing?.input_cache_read) ?? input,
+    cacheCreationCostPerToken: perToken(model.pricing?.input_cache_write) ?? input,
+  };
+}
+
+/**
+ * Rates for every model in the feed, keyed by the id sent on the wire.
+ *
+ * Deliberately not limited to what `selectCatalog` shelves: the picker accepts
+ * a typed slug and `customModels` pins one permanently, so a model that never
+ * appears in the list can still be the one being billed. Ids are used verbatim
+ * — an OpenRouter id is unambiguous, and normalising it is what makes another
+ * vendor's serving look like a match.
+ */
+export function selectRates(
+  models: ReadonlyArray<OpenRouterApiModel>,
+): ReadonlyMap<string, ModelRate> {
+  const rates = new Map<string, ModelRate>();
+  for (const model of models) {
+    const rate = rateOf(model);
+    if (rate !== null) {
+      rates.set(model.id, rate);
+    }
+  }
+  return rates;
 }
 
 /**
@@ -177,6 +239,8 @@ export interface OpenRouterCatalog {
   readonly current: Effect.Effect<ReadonlyArray<CatalogModel> | null>;
   /** Synchronous, for the adapter's context-window lookup on the hot path. */
   readonly contextWindowOf: (model: string) => number | null;
+  /** Synchronous, same reason: what the model bills per token, or null. */
+  readonly rateOf: (model: string) => ModelRate | null;
 }
 
 /** One per driver instance; the cache lives as long as the instance does. */
@@ -184,12 +248,15 @@ export const makeOpenRouterCatalog = Effect.fnUntraced(function* () {
   const client = yield* HttpClient.HttpClient;
   let cached: { readonly at: number; readonly models: ReadonlyArray<CatalogModel> } | null = null;
   const windows = new Map<string, number>();
+  let rates: ReadonlyMap<string, ModelRate> = new Map();
 
   const fetchOnce = Effect.gen(function* () {
     const response = yield* client.execute(HttpClientRequest.get(CATALOG_URL));
     const body = (yield* response.json) as { data?: ReadonlyArray<OpenRouterApiModel> };
-    const models = selectCatalog(Array.isArray(body.data) ? body.data : []);
-    return models.length > 0 ? models : null;
+    const all = Array.isArray(body.data) ? body.data : [];
+    const models = selectCatalog(all);
+    // Rates come off the whole feed while the list is capped at sixty.
+    return models.length > 0 ? { models, rates: selectRates(all) } : null;
   });
 
   const current = Effect.gen(function* () {
@@ -207,15 +274,17 @@ export const makeOpenRouterCatalog = Effect.fnUntraced(function* () {
       // Serve yesterday's answer over no answer; retry on the next check.
       return cached?.models ?? null;
     }
-    cached = { at: now, models: attempt };
-    for (const model of attempt) {
+    cached = { at: now, models: attempt.models };
+    rates = attempt.rates;
+    for (const model of attempt.models) {
       windows.set(model.id, model.contextWindow);
     }
-    return attempt;
+    return attempt.models;
   });
 
   return {
     current,
     contextWindowOf: (model: string) => windows.get(model) ?? null,
+    rateOf: (model: string) => rates.get(model) ?? null,
   } satisfies OpenRouterCatalog;
 });

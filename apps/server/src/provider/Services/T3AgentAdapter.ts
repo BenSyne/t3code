@@ -19,7 +19,7 @@ import type { PermissionRule } from "../../agent/permission/rules.ts";
 import type { ConductorContext } from "../../agent/conductor/conductorTools.ts";
 import type { BackendKind } from "../../agent/model/resolveLanguageModel.ts";
 import type { ResolvedCredential } from "../../agent/model/credentials.ts";
-import type { RateTable } from "../../usage/usagePricing.ts";
+import type { ModelRate, RateTable } from "../../usage/usagePricing.ts";
 import type { ProviderAdapterError } from "../Errors.ts";
 import type { ProviderAdapterShape } from "./ProviderAdapter.ts";
 
@@ -43,6 +43,15 @@ export interface T3AgentAdapterOptions {
   readonly mcpServers: McpServers;
   /** Model rates, for showing what a turn cost on a key the user pays for. */
   readonly rateTable: Effect.Effect<RateTable>;
+  /**
+   * Exact rates from the backend's own catalogue, where it publishes them.
+   *
+   * Preferred over `rateTable`, which keys on a bare model name and so cannot
+   * tell two servings of the same model apart — pricing an OpenRouter turn
+   * through it can bill Moonshot tokens at Fireworks' rates. Absent for a
+   * backend that publishes nothing, which falls back to the shared table.
+   */
+  readonly modelRateFor?: ((model: string) => ModelRate | null) | undefined;
   /** For discovering global skills. */
   readonly homeDirectory: string;
   /**

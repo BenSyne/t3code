@@ -121,11 +121,27 @@ export function priceUsage(
   totals: UsageTokenTotals,
   reportedCostUsd: number | null,
 ): PricedUsage {
+  return priceUsageAtRate(lookupRate(table, model), totals, reportedCostUsd);
+}
+
+/**
+ * Prices against a rate that has already been resolved.
+ *
+ * The table looks models up by name, which is right for transcripts and wrong
+ * for an aggregator: `kimi-k2-thinking` appears in LiteLLM only under
+ * `fireworks_ai/...`, so pricing an OpenRouter turn through the table bills it
+ * at Fireworks' rates. A backend that publishes its own rates resolves them
+ * itself and hands the answer in here.
+ */
+export function priceUsageAtRate(
+  rate: ModelRate | null,
+  totals: UsageTokenTotals,
+  reportedCostUsd: number | null,
+): PricedUsage {
   if (reportedCostUsd !== null && Number.isFinite(reportedCostUsd)) {
     return { costUsd: reportedCostUsd, costSource: "providerReported" };
   }
 
-  const rate = lookupRate(table, model);
   if (rate === null) return { costUsd: 0, costSource: "unpriced" };
 
   const costUsd =

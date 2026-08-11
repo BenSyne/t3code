@@ -115,12 +115,13 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
       // carries the context window and the efforts each model accepts, both of
       // which were wrong while they were written out by hand. Null rather than
       // an empty catalogue, so the fallback is decided in one place.
-      const liveCatalog =
-        backend === "openrouter"
-          ? yield* makeOpenRouterCatalog()
-          : backend === "anthropic"
-            ? yield* makeAnthropicCatalog(credential)
-            : null;
+      // Kept apart because only one of them prices: OpenRouter publishes exact
+      // per-token rates alongside the windows, in the response we already
+      // fetch.
+      const openRouterCatalog = backend === "openrouter" ? yield* makeOpenRouterCatalog() : null;
+      const anthropicCatalog =
+        backend === "anthropic" ? yield* makeAnthropicCatalog(credential) : null;
+      const liveCatalog = openRouterCatalog ?? anthropicCatalog;
 
       const stampIdentity = (draft: ServerProviderDraft) => ({
         ...draft,
@@ -203,6 +204,9 @@ export const T3AgentDriver: ProviderDriver<T3AgentSettings, T3AgentDriverEnv> = 
         // never heard of; the static list still answers for the rest.
         contextWindowFor: (model) =>
           liveCatalog?.contextWindowOf(model) ?? contextWindowFor(backend, model),
+        // Only where the backend publishes its own; everything else prices off
+        // the shared table.
+        ...(openRouterCatalog === null ? {} : { modelRateFor: openRouterCatalog.rateOf }),
         permissionRules: [],
         // Decoded leniently: an MCP entry the user typed wrong should cost that
         // one server, not the whole provider instance.

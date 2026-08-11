@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { selectCatalog, type OpenRouterApiModel } from "./openRouterCatalog.ts";
+import {
+  rateOf,
+  selectCatalog,
+  selectRates,
+  type OpenRouterApiModel,
+} from "./openRouterCatalog.ts";
 
 /** Selection compares `created` values to each other, so any fixed epoch does. */
 const EPOCH = 1_790_000_000;
@@ -127,5 +132,74 @@ describe("selecting the OpenRouter catalogue", () => {
     );
 
     expect(selectCatalog(flood)).toHaveLength(60);
+  });
+});
+
+describe("pricing from the feed", () => {
+  const priced = (pricing: Record<string, string>, id = "vendor/model") => model({ id, pricing });
+
+  it("reads the per-token rates the feed publishes", () => {
+    expect(
+      rateOf(
+        priced({
+          prompt: "0.000002",
+          completion: "0.00001",
+          input_cache_read: "0.0000002",
+          input_cache_write: "0.0000025",
+        }),
+      ),
+    ).toEqual({
+      inputCostPerToken: 0.000002,
+      outputCostPerToken: 0.00001,
+      cacheReadCostPerToken: 0.0000002,
+      cacheCreationCostPerToken: 0.0000025,
+    });
+  });
+
+  it("prices uncharged cache reads at the full input rate, not at zero", () => {
+    // A third of the catalogue quotes no cache rate. Treating that as free
+    // understates every conversation that reuses its prefix, which is most of
+    // them once caching is on.
+    const rate = rateOf(priced({ prompt: "0.000003", completion: "0.000015" }));
+    expect(rate?.cacheReadCostPerToken).toBe(0.000003);
+    expect(rate?.cacheCreationCostPerToken).toBe(0.000003);
+  });
+
+  it("keeps a genuinely free model at zero rather than reading it as missing", () => {
+    expect(rateOf(priced({ prompt: "0", completion: "0" }))).toMatchObject({
+      inputCostPerToken: 0,
+      outputCostPerToken: 0,
+    });
+  });
+
+  it("reports a model the feed does not price as unpriced", () => {
+    expect(rateOf(model({ id: "vendor/model" }))).toBeNull();
+    expect(rateOf(priced({ prompt: "0.000002" }))).toBeNull();
+    expect(rateOf(priced({ prompt: "not-a-number", completion: "0.00001" }))).toBeNull();
+  });
+
+  it("prices every model in the feed, not just the ones the list shows", () => {
+    // The list is capped at sixty for payload reasons, but the picker takes a
+    // typed slug and `customModels` pins one — so a model that never appears
+    // can still be the one being billed. Pricing only the shelf would show
+    // "unknown" for exactly those deliberate choices.
+    const flood = Array.from({ length: 400 }, (_, index) =>
+      priced({ prompt: "0.000001", completion: "0.000002" }, `vendor/model-${index}`),
+    );
+
+    expect(selectCatalog(flood)).toHaveLength(60);
+    expect(selectRates(flood).size).toBe(400);
+  });
+
+  it("keys rates on the id sent on the wire, variants included", () => {
+    // `:free` is dropped from the list as an alternate serving, but it bills
+    // differently from its base slug and a user can pick it by typing it.
+    const rates = selectRates([
+      priced({ prompt: "0.000002", completion: "0.00001" }, "vendor/model"),
+      priced({ prompt: "0", completion: "0" }, "vendor/model:free"),
+    ]);
+
+    expect(rates.get("vendor/model")?.inputCostPerToken).toBe(0.000002);
+    expect(rates.get("vendor/model:free")?.inputCostPerToken).toBe(0);
   });
 });

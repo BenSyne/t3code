@@ -41,7 +41,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import { conductorContributor } from "../../agent/conductor/conductorTools.ts";
 import { describeTurnFailure } from "../../agent/events/failureMessage.ts";
 import { toPricingTotals } from "../../agent/events/usage.ts";
-import { priceUsage } from "../../usage/usagePricing.ts";
+import { lookupRate, priceUsageAtRate } from "../../usage/usagePricing.ts";
 import { T3AGENT_DRIVER_KIND } from "../../agent/driverKind.ts";
 import { makeRuntimeEventEmitter } from "../../agent/events/emitter.ts";
 import {
@@ -87,10 +87,10 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
   // returns immediately, so the turn must outlive the call that started it and
   // die with the instance rather than with the request.
   const instanceScope = yield* Effect.scope;
-  // Read once per adapter. The table changes rarely and a stale entry costs a
-  // slightly wrong figure, where a per-turn lookup would cost a service call
-  // inside the hot path.
-  const rateTable = yield* options.rateTable;
+  // Read per turn, not here. The table loads lazily on first read and then
+  // refreshes on a TTL, so an instance built before anything has asked for it
+  // would capture an empty map and price every turn of its life as unpriced —
+  // which is exactly what happened, and read in the UI as "unknown".
   const gate = yield* makeApprovalGate;
   const transcripts = makeTranscriptStore({
     fileSystem,
@@ -444,6 +444,12 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
     // turn that is about to run.
     const compacted = yield* compactIfNeeded(context);
 
+    // The backend's own rates where it publishes them, the shared table
+    // otherwise. Resolved here rather than inside `priceStep` so the lookup
+    // happens once per turn instead of once per step.
+    const rate =
+      options.modelRateFor?.(context.model) ?? lookupRate(yield* options.rateTable, context.model);
+
     const outcome = yield* Effect.exit(
       runTurn({
         threadId,
@@ -454,7 +460,7 @@ export const makeT3AgentAdapter = Effect.fnUntraced(function* (options: T3AgentA
         toolkit: context.toolkit,
         emitter: events,
         isInterrupted: () => context.interrupted,
-        priceStep: (usage) => priceUsage(rateTable, context.model, toPricingTotals(usage), null),
+        priceStep: (usage) => priceUsageAtRate(rate, toPricingTotals(usage), null),
       }).pipe(Effect.provide(context.modelLayer)),
     );
 
