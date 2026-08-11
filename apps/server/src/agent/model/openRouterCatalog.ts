@@ -71,8 +71,19 @@ const SHELF_FAMILIES = [
  */
 const SHELF_PER_FAMILY = 3;
 
-/** Everything past the shelf, newest first, cut here so a 400-model payload is not. */
-const MAX_MODELS = 150;
+/**
+ * Everything past the shelf, newest first, cut here.
+ *
+ * The snapshot crosses the websocket on every provider-status refresh, so this
+ * number is a payload budget, not a display limit. Measured against the live
+ * catalogue (261 eligible models): 150 serialises to 63.5 KiB, 60 to 26.9 KiB.
+ * The largest provider already in the app advertises nine models.
+ *
+ * Sixty keeps the whole shelf plus a month or so of newer releases behind
+ * search. Anything older is still reachable — the picker accepts a typed slug
+ * and `customModels` pins one permanently.
+ */
+const MAX_MODELS = 60;
 
 function isEligible(model: OpenRouterApiModel): boolean {
   return (

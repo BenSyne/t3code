@@ -101,10 +101,14 @@ describe("selecting the OpenRouter catalogue", () => {
   });
 
   it("caps the list rather than shipping the whole catalogue", () => {
+    // The cap is a websocket payload budget — the snapshot is re-sent on every
+    // provider-status refresh — so this asserts the exact number rather than an
+    // upper bound. Raising it should be a deliberate act with a payload
+    // measurement behind it, not something a passing test waves through.
     const flood = Array.from({ length: 400 }, (_, index) =>
       model({ id: `vendor/model-${index}`, created: daysAgo(index) }),
     );
 
-    expect(selectCatalog(flood).length).toBeLessThanOrEqual(150);
+    expect(selectCatalog(flood)).toHaveLength(60);
   });
 });
