@@ -5,6 +5,13 @@
  */
 import type { CanonicalItemType } from "@t3tools/contracts";
 
+import {
+  summarizePlan,
+  type PlanStatus,
+  PLAN_STATUSES,
+  type PlanStep,
+} from "../tools/plan/updatePlan.ts";
+
 export interface ToolItemDescriptor {
   readonly itemType: CanonicalItemType;
   /** One line, shown collapsed. Never empty — the UI hides an empty title. */
@@ -54,6 +61,18 @@ export function describeToolCall(input: {
       const url = stringField(params, "url") ?? "a page";
       return { itemType: "dynamic_tool_call", title: `Fetch ${url}`, data: { url } };
     }
+    case "update_plan": {
+      const plan = planSteps(params);
+      if (plan.length === 0) {
+        return { itemType: "dynamic_tool_call", title: "Update the plan" };
+      }
+      return {
+        itemType: "dynamic_tool_call",
+        title: `Plan: ${summarizePlan(plan)}`,
+        detail: plan.map((entry) => `${PLAN_MARKS[entry.status]} ${entry.step}`).join("\n"),
+        data: { plan },
+      };
+    }
     default:
       return { itemType: "dynamic_tool_call", title: input.toolName };
   }
@@ -93,6 +112,30 @@ function toolFailureMessage(result: Record<string, unknown> | null): string | nu
   }
   const message = result["message"];
   return typeof message === "string" && message !== "" ? message : "The tool failed.";
+}
+
+const PLAN_MARKS: Record<PlanStatus, string> = {
+  completed: "✓",
+  in_progress: "▸",
+  pending: "○",
+};
+
+/** The steps as sent, dropping anything that is not one. Presentation only. */
+function planSteps(params: Record<string, unknown> | null): ReadonlyArray<PlanStep> {
+  const raw = params?.["plan"];
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.flatMap((candidate) => {
+    const entry = asRecord(candidate);
+    const step = stringField(entry, "step");
+    const status = stringField(entry, "status");
+    return step !== null &&
+      status !== null &&
+      (PLAN_STATUSES as ReadonlyArray<string>).includes(status)
+      ? [{ step, status: status as PlanStatus }]
+      : [];
+  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

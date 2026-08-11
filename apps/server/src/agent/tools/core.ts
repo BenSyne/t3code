@@ -10,6 +10,7 @@ import { makeGlobTool } from "./fs/glob.ts";
 import { makeGrepTool } from "./fs/grep.ts";
 import { makeReadTool } from "./fs/read.ts";
 import { makeWriteTool } from "./fs/write.ts";
+import { makeUpdatePlanTool } from "./plan/updatePlan.ts";
 import { withApproval, type AgentToolContext, type ToolContributor } from "./registry.ts";
 import { makeBashTool } from "./shell/bash.ts";
 import { makeWebFetchTool } from "./web/fetch.ts";
@@ -22,6 +23,7 @@ export const CORE_TOOL_NAMES = [
   "grep",
   "bash",
   "webfetch",
+  "update_plan",
 ] as const;
 
 /** What the user is shown when asked about a call: the command, path, or URL. */
@@ -42,5 +44,7 @@ export const coreTools: ToolContributor = {
       withApproval(makeEditTool(context), context, filePathOf),
       withApproval(makeBashTool(context), context, commandOf),
       withApproval(makeWebFetchTool(context), context, urlOf),
+      // No approval: the plan changes nothing outside the timeline.
+      makeUpdatePlanTool(),
     ]),
 };
