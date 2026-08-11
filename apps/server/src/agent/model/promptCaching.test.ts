@@ -17,8 +17,16 @@ const conversation = Prompt.make([
   { role: "user", content: [{ type: "text", text: "Any luck?" }] },
 ]);
 
+type CacheOptions = {
+  anthropic?: { cacheControl?: { type?: string } };
+  openrouter?: { cacheControl?: { type?: string } };
+};
+
 const breakpointOf = (message: Prompt.Message) =>
-  (message.options as { anthropic?: { cacheControl?: { type?: string } } }).anthropic?.cacheControl;
+  (message.options as CacheOptions).anthropic?.cacheControl;
+
+const openrouterBreakpointOf = (message: Prompt.Message) =>
+  (message.options as CacheOptions).openrouter?.cacheControl;
 
 describe("withCacheBreakpoints", () => {
   it("marks exactly the system message and the last message", () => {
@@ -28,11 +36,34 @@ describe("withCacheBreakpoints", () => {
     assert.deepStrictEqual(marks, ["ephemeral", undefined, undefined, "ephemeral"]);
   });
 
+  it("marks the OpenRouter dialect as well, since each client reads its own key", () => {
+    // The bug this exists for: the mark was written only under `anthropic`,
+    // so every request through OpenRouter — the backend the connect flow
+    // defaults to — dropped it and re-billed the whole conversation.
+    const marks = withCacheBreakpoints(conversation).content.map(
+      (message) => openrouterBreakpointOf(message)?.type,
+    );
+    assert.deepStrictEqual(marks, ["ephemeral", undefined, undefined, "ephemeral"]);
+  });
+
+  it("puts both marks in the same places, so neither backend caches a different prefix", () => {
+    const annotated = withCacheBreakpoints(conversation).content;
+    assert.deepStrictEqual(
+      annotated.map((message) => breakpointOf(message)?.type),
+      annotated.map((message) => openrouterBreakpointOf(message)?.type),
+    );
+  });
+
   it("leaves the original prompt untouched", () => {
     // The loop rebuilds the next request from this prompt; a mutation here
     // would accumulate a mark per step until Anthropic rejects the request.
     withCacheBreakpoints(conversation);
-    assert.isTrue(conversation.content.every((message) => breakpointOf(message) === undefined));
+    assert.isTrue(
+      conversation.content.every(
+        (message) =>
+          breakpointOf(message) === undefined && openrouterBreakpointOf(message) === undefined,
+      ),
+    );
   });
 
   it("keeps the other options a message already carries", () => {

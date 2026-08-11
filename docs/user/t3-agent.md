@@ -39,11 +39,14 @@ models. A model with no reasoning control shows none.
 
 ### What a conversation costs
 
-On the Anthropic backend, the growing conversation is marked for prompt caching, so each turn
-re-bills the repeated prefix at cache rates rather than full price — on a long thread that is
-most of the bill. OpenAI applies its caching automatically. A dropped connection or a rate limit
-is retried quietly with backoff rather than failing your turn; you pay for requests that ran, not
-for the retry logic.
+The growing conversation is marked for prompt caching, so each turn re-bills the repeated prefix
+at cache rates rather than full price — on a long thread that is most of the bill. The marks go
+out on both the Anthropic and OpenRouter backends, and OpenRouter converts them for whichever
+model it routes to. Backends that cache on their own (OpenAI, DeepSeek, Moonshot, Grok) need no
+marks and are already covered.
+
+A dropped connection or a rate limit is retried quietly with backoff rather than failing your
+turn; you pay for requests that ran, not for the retry logic.
 
 ### Running against a local model
 
