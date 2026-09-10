@@ -157,15 +157,18 @@ describe("ProviderCommandReactor", () => {
         const wrongModel = ProviderInstanceId.make("codex_other_model");
         const duplicate = ProviderInstanceId.make("codex_duplicate");
         const unverified = ProviderInstanceId.make("codex_unverified");
+        const unchecked = ProviderInstanceId.make("codex_unchecked");
         const firstSent = yield* Deferred.make<void>();
         const secondSent = yield* Deferred.make<void>();
         const stopped = yield* Deferred.make<void>();
         let sendCount = 0;
         const harness = yield* Effect.promise(() =>
           createHarness({
-            accountFallbacks: { [main]: [duplicate, unverified, wrongModel, backup, last] },
+            accountFallbacks: {
+              [main]: [unchecked, duplicate, unverified, wrongModel, backup, last],
+            },
             projectAccounts: { [ProjectId.make("project-1")]: [main, wrongModel, backup, last] },
-            providers: [main, duplicate, unverified, backup, last, wrongModel].map(
+            providers: [main, unchecked, duplicate, unverified, backup, last, wrongModel].map(
               (instanceId) => ({
                 instanceId,
                 driver: ProviderDriverKind.make("codex"),
@@ -201,6 +204,16 @@ describe("ProviderCommandReactor", () => {
         );
         const threadId = ThreadId.make("thread-1");
         const now = "2026-01-01T00:00:00.000Z";
+        yield* harness.engine.dispatch({
+          type: "thread.meta.update",
+          commandId: CommandId.make("choose-thread-backups"),
+          threadId,
+          orchestration: {
+            mode: "same-account",
+            workerAccountIds: [],
+            fallbackAccountIds: [duplicate, unverified, wrongModel, backup, last],
+          },
+        });
         const cursor = { threadId: "native-history-retained" };
         harness.runtimeSessions.push({
           threadId,
@@ -427,6 +440,10 @@ describe("ProviderCommandReactor", () => {
           const orchestration = {
             mode,
             workerAccountIds: [ProviderInstanceId.make("claudeAgent")],
+            workerModels: [
+              { instanceId: ProviderInstanceId.make("claudeAgent"), model: "fable-test" },
+            ],
+            fallbackAccountIds: [],
           };
           yield* harness.engine.dispatch({
             type: "thread.meta.update",

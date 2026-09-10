@@ -30,7 +30,12 @@ const owner: OrchestrationThreadShell = {
   id: ThreadId.make("orchestrator"),
   projectId: ProjectId.make("project"),
   modelSelection: selection,
-  orchestration: { mode: "delegated", workerAccountIds: [workerAccount] },
+  orchestration: {
+    mode: "delegated",
+    workerAccountIds: [workerAccount],
+    workerModels: [{ instanceId: workerAccount, model: "astra-test" }],
+    fallbackAccountIds: [],
+  },
   runtimeMode: "approval-required",
   interactionMode: "default",
   branch: null,
@@ -101,6 +106,7 @@ it.effect(
             skills: [],
             models: [
               { slug: "astra-test", name: "Astra test", isCustom: false, capabilities: null },
+              { slug: "other-model", name: "Not selected", isCustom: false, capabilities: null },
             ],
           },
         ]),
@@ -162,12 +168,35 @@ it.effect(
         projectId: owner.projectId,
         modelSelection: { instanceId: workerAccount, model: "astra-test" },
         runtimeMode: "approval-required",
-        orchestration: DEFAULT_THREAD_ORCHESTRATION,
+        orchestration: { ...DEFAULT_THREAD_ORCHESTRATION, fallbackAccountIds: [] },
       });
       expect(commands[1]).toMatchObject({
         type: "thread.turn.start",
         message: { text: "Test the parser only." },
       });
+      const unselectedModel = yield* toolkit
+        .handle("t3_delegate", {
+          requestId: "wrong-model",
+          title: "Not allowed",
+          prompt: "Do work",
+          modelSelection: { instanceId: workerAccount, model: "other-model" },
+        })
+        .pipe(Stream.unwrap, Stream.runCollect);
+      expect(unselectedModel[0]?.isFailure).toBe(true);
+      expect(commands).toHaveLength(2);
+      // Starting another task does not require the first worker's result.
+      const parallelWorker = yield* toolkit
+        .handle("t3_delegate", {
+          requestId: "independent-worker",
+          title: "Independent work",
+          prompt: "Review a separate module.",
+          modelSelection: { instanceId: workerAccount, model: "astra-test" },
+        })
+        .pipe(Stream.unwrap, Stream.runCollect);
+      expect(parallelWorker[0]?.isFailure).toBe(false);
+      expect(commands).toHaveLength(4);
+      const createdWorkers = commands.filter((command) => command.type === "thread.create");
+      expect(createdWorkers[1]?.threadId).not.toEqual(createdWorkers[0]?.threadId);
       const wrongProject = yield* toolkit
         .handle("t3_message_task", {
           threadId: other.id,
@@ -195,7 +224,7 @@ it.effect(
         }),
       );
       expect(wrongAccount[0]?.isFailure).toBe(true);
-      expect(commands).toHaveLength(2);
+      expect(commands).toHaveLength(4);
       currentOwner = { ...owner, orchestration: { mode: "delegated", workerAccountIds: [] } };
       const filtered = yield* toolkit
         .handle("t3_accounts", {})
@@ -210,7 +239,7 @@ it.effect(
         })
         .pipe(Stream.unwrap, Stream.runCollect);
       expect(denied[0]?.isFailure).toBe(true);
-      expect(commands).toHaveLength(2);
+      expect(commands).toHaveLength(4);
       currentOwner = { ...owner, orchestration: DEFAULT_THREAD_ORCHESTRATION };
       const excludedOwner = yield* toolkit
         .handle("t3_accounts", {})

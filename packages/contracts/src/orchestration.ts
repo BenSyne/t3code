@@ -611,6 +611,10 @@ export type ThreadLinkedPullRequest = typeof ThreadLinkedPullRequest.Type;
 export const ThreadOrchestration = Schema.Struct({
   mode: Schema.Literals(["same-account", "delegated"]),
   workerAccountIds: Schema.Array(ProviderInstanceId),
+  /** Missing on older threads, which allowed every model on their selected accounts. */
+  workerModels: Schema.optional(Schema.Array(ModelSelection)),
+  /** Missing inherits configured substitutes; an empty list disables automatic switching. */
+  fallbackAccountIds: Schema.optional(Schema.Array(ProviderInstanceId)),
 });
 export type ThreadOrchestration = typeof ThreadOrchestration.Type;
 export const DEFAULT_THREAD_ORCHESTRATION: ThreadOrchestration = {

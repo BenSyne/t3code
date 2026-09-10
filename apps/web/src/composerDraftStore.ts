@@ -726,6 +726,15 @@ function cloneModelSelection(selection: ModelSelection): DeepMutable<ModelSelect
   } as DeepMutable<ModelSelection>;
 }
 
+function cloneOrchestration(orchestration: ThreadOrchestration): DeepMutable<ThreadOrchestration> {
+  return {
+    ...orchestration,
+    workerAccountIds: [...orchestration.workerAccountIds],
+    workerModels: orchestration.workerModels?.map(cloneModelSelection),
+    fallbackAccountIds: orchestration.fallbackAccountIds?.slice(),
+  };
+}
+
 function compactModelSelectionByProvider(
   selections: Partial<Record<ProviderInstanceId, ModelSelection>>,
 ): DeepMutable<Record<ProviderInstanceId, ModelSelection>> {
@@ -2035,10 +2044,7 @@ function normalizePersistedDraftsByThreadId(
         : {}),
       ...(draftCandidate.orchestration
         ? {
-            orchestration: {
-              ...draftCandidate.orchestration,
-              workerAccountIds: [...draftCandidate.orchestration.workerAccountIds],
-            },
+            orchestration: cloneOrchestration(draftCandidate.orchestration),
           }
         : {}),
       ...(runtimeMode ? { runtimeMode } : {}),
@@ -2225,10 +2231,7 @@ export function partializeComposerDraftStoreState(
         : {}),
       ...(draft.orchestration
         ? {
-            orchestration: {
-              ...draft.orchestration,
-              workerAccountIds: [...draft.orchestration.workerAccountIds],
-            },
+            orchestration: cloneOrchestration(draft.orchestration),
           }
         : {}),
       ...(draft.runtimeMode ? { runtimeMode: draft.runtimeMode } : {}),

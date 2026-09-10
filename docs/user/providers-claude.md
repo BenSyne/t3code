@@ -18,8 +18,8 @@ compares the email and subscription workspace when available. Duplicate or
 unverified accounts are skipped during automatic continuation; reconnect a
 duplicate using **Use different account**.
 
-Select a Claude account and model in the chat, then open **Working accounts**
-to use that model for both planning and development or choose separate workers. See [subscription orchestration](./providers-codex.md#use-a-subscription-as-the-orchestrator).
+Open **Thread models** in the chat to choose a Claude orchestrator and use
+**Usage-only fallback** or a **Parallel team** with selected worker models. See [subscription orchestration](./providers-codex.md#use-a-subscription-as-the-orchestrator).
 
 For manually configured directories:
 

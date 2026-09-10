@@ -5,7 +5,10 @@ import {
   ThreadId,
   DEFAULT_THREAD_ORCHESTRATION,
 } from "@t3tools/contracts";
-import { isThreadWorkerAccountAllowed } from "@t3tools/shared/serverSettings";
+import {
+  isThreadWorkerAccountAllowed,
+  isThreadWorkerModelAllowed,
+} from "@t3tools/shared/serverSettings";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -50,7 +53,7 @@ export const OrchestratorToolkit = Toolkit.make(
   Tool.make("t3_delegate", {
     ...options,
     description:
-      "Start a worker task in this project's working directory. Choose a worker account and model from t3_accounts. Workers share files: give them bounded tasks with non-overlapping edits. Save the returned task ID and inspect the result before reporting completion. requestId must be unique per intended task; reuse it when retrying the same request.",
+      "Start a worker task in this project's working directory and return immediately; independent workers can run in parallel. Choose a permitted account and model from t3_accounts. Workers share files: give them bounded tasks with non-overlapping edits. Save the returned task ID and inspect the result before reporting completion. requestId must be unique per intended task; reuse it when retrying the same request.",
     parameters: Schema.Struct({
       requestId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
       title: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
@@ -149,6 +152,8 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
                 (provider) =>
                   provider.enabled &&
                   provider.installed &&
+                  provider.auth.status !== "unauthenticated" &&
+                  provider.availability !== "unavailable" &&
                   isThreadWorkerAccountAllowed(
                     owner.orchestration,
                     provider.instanceId,
@@ -160,8 +165,17 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
                 name: provider.displayName ?? provider.driver,
                 provider: provider.driver,
                 auth: provider.auth.status,
-                models: provider.models.map((model) => ({ id: model.slug, name: model.name })),
-              }));
+                models: provider.models
+                  .filter((model) =>
+                    isThreadWorkerModelAllowed(
+                      owner.orchestration,
+                      { instanceId: provider.instanceId, model: model.slug },
+                      currentSettings,
+                    ),
+                  )
+                  .map((model) => ({ id: model.slug, name: model.name })),
+              }))
+              .filter((account) => account.models.length > 0);
             return { accounts };
           }),
         ),
@@ -187,14 +201,14 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
           Effect.gen(function* () {
             const owner = yield* authorize();
             if (
-              !isThreadWorkerAccountAllowed(
+              !isThreadWorkerModelAllowed(
                 owner.orchestration,
-                input.modelSelection.instanceId,
+                input.modelSelection,
                 yield* settings.getSettings,
               )
             )
               return yield* fail(
-                "This account is not selected as a worker for this thread. Change Working accounts in the chat controls.",
+                "This account and model are not selected for this thread. Change Thread models in the chat controls.",
               );
             const account = (yield* providers.getProviders).find(
               (provider) => provider.instanceId === input.modelSelection.instanceId,
@@ -203,6 +217,7 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
               !account?.enabled ||
               !account.installed ||
               account.auth.status === "unauthenticated" ||
+              account.availability === "unavailable" ||
               !account.models.some((model) => model.slug === input.modelSelection.model)
             ) {
               return yield* fail(
@@ -218,7 +233,12 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
               threadId,
               projectId: owner.projectId,
               title: input.title,
-              orchestration: DEFAULT_THREAD_ORCHESTRATION,
+              orchestration: {
+                ...DEFAULT_THREAD_ORCHESTRATION,
+                ...(owner.orchestration?.fallbackAccountIds !== undefined
+                  ? { fallbackAccountIds: owner.orchestration.fallbackAccountIds }
+                  : {}),
+              },
               modelSelection: input.modelSelection,
               runtimeMode: owner.runtimeMode,
               interactionMode: owner.interactionMode,
@@ -306,15 +326,15 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
               });
             } else {
               if (
-                !isThreadWorkerAccountAllowed(
+                !isThreadWorkerModelAllowed(
                   owner.orchestration,
-                  target.modelSelection.instanceId,
+                  target.modelSelection,
                   yield* settings.getSettings,
                   true,
                 )
               )
                 return yield* fail(
-                  "This task's account is no longer selected for this thread. Update Working accounts before continuing it.",
+                  "This task's account and model are no longer selected for this thread. Update Thread models before continuing it.",
                 );
               if (!input.prompt) return yield* fail("A follow-up prompt is required.");
               if (target.session?.status === "running" || target.session?.status === "starting") {

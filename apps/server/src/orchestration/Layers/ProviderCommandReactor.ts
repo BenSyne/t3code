@@ -14,7 +14,11 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
-import { getSubscriptionFallbackIssue, providerAccountChain } from "@t3tools/shared/serverSettings";
+import {
+  getSubscriptionFallbackIssue,
+  providerAccountChain,
+  threadAccountFallbacks,
+} from "@t3tools/shared/serverSettings";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -1728,7 +1732,11 @@ const make = Effect.gen(function* () {
       handledFallbacks.delete(handledFallbacks.values().next().value!);
     const settings = yield* serverSettingsService.getSettings;
     const chain = providerAccountChain(settings, thread.modelSelection.instanceId);
-    const remaining = chain.slice(chain.indexOf(thread.modelSelection.instanceId) + 1);
+    const remaining = threadAccountFallbacks(
+      settings,
+      thread.orchestration,
+      thread.modelSelection.instanceId,
+    );
     if (chain.length < 2) return;
     const version = fallbackVersions.get(threadId) ?? 0;
     const cancelled = () => (fallbackVersions.get(threadId) ?? 0) !== version;

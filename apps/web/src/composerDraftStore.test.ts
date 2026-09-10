@@ -225,6 +225,8 @@ describe("composerDraftStore assistant citations", () => {
       const orchestration = {
         mode: "delegated" as const,
         workerAccountIds: [ProviderInstanceId.make("codex")],
+        workerModels: [{ instanceId: ProviderInstanceId.make("codex"), model: "astra-test" }],
+        fallbackAccountIds: [],
       };
       useComposerDraftStore.getState().setOrchestration(threadRef, orchestration);
       await vi.advanceTimersByTimeAsync(300);

@@ -17,6 +17,9 @@ import {
   getSubscriptionFallbackIssue,
   isOrchestratorSelection,
   isThreadWorkerAccountAllowed,
+  isThreadWorkerModelAllowed,
+  resolveThreadWorkerModels,
+  threadAccountFallbacks,
   isProjectProviderAccountAllowed,
   validateProviderAccountFallbacks,
   createSubscriptionAccountPatch,
@@ -29,6 +32,84 @@ import {
 } from "./serverSettings.ts";
 
 describe("serverSettings helpers", () => {
+  it("enforces exact worker model choices and preserves legacy account selections", () => {
+    const main = ProviderInstanceId.make("codex");
+    const backup = ProviderInstanceId.make("codex_backup");
+    const settings = { providerAccountFallbacks: { [main]: [backup] } };
+    const selection = { instanceId: main, model: "astra-test" };
+    const legacy = { mode: "delegated" as const, workerAccountIds: [main] };
+    const selected = { ...legacy, workerModels: [selection] };
+    expect(isThreadWorkerModelAllowed(legacy, selection, settings)).toBe(true);
+    expect(isThreadWorkerModelAllowed(selected, selection, settings)).toBe(true);
+    expect(isThreadWorkerModelAllowed(selected, { ...selection, model: "other" }, settings)).toBe(
+      false,
+    );
+    expect(isThreadWorkerModelAllowed({ ...selected, workerModels: [] }, selection, settings)).toBe(
+      false,
+    );
+    expect(
+      isThreadWorkerModelAllowed({ ...selected, workerAccountIds: [] }, selection, settings),
+    ).toBe(false);
+    expect(
+      isThreadWorkerModelAllowed({ ...selected, mode: "same-account" }, selection, settings),
+    ).toBe(false);
+    expect(
+      isThreadWorkerModelAllowed(selected, { ...selection, instanceId: backup }, settings),
+    ).toBe(false);
+    expect(
+      isThreadWorkerModelAllowed(selected, { ...selection, instanceId: backup }, settings, true),
+    ).toBe(true);
+    expect(
+      isThreadWorkerModelAllowed(
+        { ...selected, fallbackAccountIds: [] },
+        { ...selection, instanceId: backup },
+        settings,
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      isThreadWorkerModelAllowed(selected, { instanceId: backup, model: "other" }, settings, true),
+    ).toBe(false);
+  });
+
+  it("narrows the backup order per thread and never adds unrelated accounts", () => {
+    const main = ProviderInstanceId.make("codex");
+    const first = ProviderInstanceId.make("codex_first");
+    const last = ProviderInstanceId.make("codex_last");
+    const unrelated = ProviderInstanceId.make("claudeAgent");
+    const settings = { providerAccountFallbacks: { [main]: [first, last] } };
+    const orchestration = { mode: "same-account" as const, workerAccountIds: [] };
+    expect(threadAccountFallbacks(settings, orchestration, main)).toEqual([first, last]);
+    expect(
+      threadAccountFallbacks(
+        settings,
+        { ...orchestration, fallbackAccountIds: [last, unrelated] },
+        main,
+      ),
+    ).toEqual([last]);
+    expect(
+      threadAccountFallbacks(settings, { ...orchestration, fallbackAccountIds: [] }, main),
+    ).toEqual([]);
+    expect(threadAccountFallbacks(settings, undefined, first)).toEqual([last]);
+    expect(threadAccountFallbacks(settings, orchestration, last)).toEqual([]);
+  });
+
+  it("expands legacy models without broadening an explicit selection", () => {
+    const main = ProviderInstanceId.make("codex");
+    const backup = ProviderInstanceId.make("codex_backup");
+    const model = { slug: "astra-test", name: "Astra", isCustom: false, capabilities: null };
+    const providers = [
+      { instanceId: main, models: [model] },
+      { instanceId: backup, models: [model] },
+    ];
+    const legacy = { mode: "delegated" as const, workerAccountIds: [main] };
+    expect(resolveThreadWorkerModels(legacy, providers)).toEqual([
+      { instanceId: main, model: model.slug },
+    ]);
+    expect(resolveThreadWorkerModels({ ...legacy, workerModels: [] }, providers)).toEqual([]);
+    const saved = [{ instanceId: backup, model: "no-longer-available" }];
+    expect(resolveThreadWorkerModels({ ...legacy, workerModels: saved }, providers)).toEqual(saved);
+  });
   describe("subscription identity guard", () => {
     const main = ProviderInstanceId.make("claudeAgent");
     const first = ProviderInstanceId.make("claude_backup");

@@ -116,9 +116,63 @@ export function isThreadWorkerAccountAllowed(
   return orchestration.workerAccountIds.some((primary) => {
     if (primary === instanceId) return true;
     if (!includeSubstitutes) return false;
-    const chain = providerAccountChain(settings, primary);
-    return chain.slice(chain.indexOf(primary) + 1).includes(instanceId);
+    return threadAccountFallbacks(settings, orchestration, primary).includes(instanceId);
   });
+}
+
+/** Thread choices narrow the configured continuation order, never expand it. */
+export function threadAccountFallbacks(
+  settings: Pick<ServerSettings, "providerAccountFallbacks">,
+  orchestration: ThreadOrchestration | undefined,
+  instanceId: ProviderInstanceId,
+): ReadonlyArray<ProviderInstanceId> {
+  const chain = providerAccountChain(settings, instanceId);
+  return chain
+    .slice(chain.indexOf(instanceId) + 1)
+    .filter(
+      (id) =>
+        orchestration?.fallbackAccountIds === undefined ||
+        orchestration.fallbackAccountIds.includes(id),
+    );
+}
+
+/** Expand legacy account selections once when editing them in the model controls. */
+export function resolveThreadWorkerModels(
+  orchestration: ThreadOrchestration,
+  providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "models">>,
+): ReadonlyArray<ModelSelection> {
+  return (
+    orchestration.workerModels ??
+    providers.flatMap((provider) =>
+      orchestration.workerAccountIds.includes(provider.instanceId)
+        ? provider.models.map((model) => ({ instanceId: provider.instanceId, model: model.slug }))
+        : [],
+    )
+  );
+}
+
+/** Enforce the account and model pair on both new assignments and continued workers. */
+export function isThreadWorkerModelAllowed(
+  orchestration: ThreadOrchestration | undefined,
+  selection: ModelSelection,
+  settings: Pick<ServerSettings, "providerAccountFallbacks">,
+  includeSubstitutes = false,
+): boolean {
+  if (
+    !isThreadWorkerAccountAllowed(orchestration, selection.instanceId, settings, includeSubstitutes)
+  )
+    return false;
+  if (orchestration?.workerModels === undefined) return true;
+  return orchestration.workerModels.some(
+    (allowed) =>
+      allowed.model === selection.model &&
+      orchestration.workerAccountIds.includes(allowed.instanceId) &&
+      (allowed.instanceId === selection.instanceId ||
+        (includeSubstitutes &&
+          threadAccountFallbacks(settings, orchestration, allowed.instanceId).includes(
+            selection.instanceId,
+          ))),
+  );
 }
 
 /** Reject ambiguous chains instead of choosing an arbitrary primary during recovery. */

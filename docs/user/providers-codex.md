@@ -74,30 +74,33 @@ contains a copied Codex setup. Use a fresh shadow directory and sign in again.
 
 ## Use a subscription as the orchestrator
 
-Choose the account and model in the chat's model picker. Open **Working accounts**
-next to it to choose how that thread runs:
+Open **Thread models** in the chat and choose the orchestrator account and model,
+then select a working mode:
 
-- **Same account and model** (the default): the selected model plans, builds, and
-  verifies in the same conversation. T3 changes accounts automatically only when
-  that model reaches a usage limit, following the configured substitute order.
-- **Separate worker accounts**: the selected chat model orchestrates. Select which
-  accounts it may assign development work to. It chooses available models for those
-  workers, reads their results, and integrates the work. Workers share the project's
-  working directory. Each worker uses its own account's configured usage-limit fallback.
+- **Usage-only fallback** (the default): the orchestrator plans, builds, and verifies
+  in one conversation. T3 switches only after the provider confirms a usage limit
+  for that model. Choose which configured backups may take over in this thread.
+- **Parallel team**: choose one or more models under each worker account. The
+  orchestrator can start independent workers concurrently, read their results,
+  and integrate the work. Only the selected account and model pairs may receive
+  assignments. Workers share the project's files, so the orchestrator must keep
+  edits separate and review the combined result. Parallel work is not always faster.
 
-For Codex-only work, choose a Codex chat model and either use **Same account and model**
-or select only Codex worker accounts. Selecting Claude for orchestration and Codex
-workers keeps their conversations separate while the orchestrator coordinates results.
-The orchestrator decides when delegation is useful; it does not send every task to
-all selected accounts.
+Backups remain reserves in either mode: they take over only at a usage limit,
+using the same model and saved conversation. Unchecked backups are excluded from
+this thread and workers it starts. Configure subscription sign-in and backup order
+in **Settings → Providers**. Automatic fallback never switches between Codex and Claude.
 
-These choices belong to the thread and are available on web, desktop, and mobile.
-Change them between turns. Your conversation stays intact when changing the working
-mode. Existing threads default to **Same account and model**; the former project and
-global orchestrator settings no longer control delegation.
-Manage subscription sign-in and substitute order in **Settings → Providers**.
-Substitutes retain the selected model and native conversation; automatic fallback
-never switches between Codex and Claude.
+For Codex-only work, choose a Codex orchestrator and only Codex workers and backups.
+You can also choose a Claude orchestrator with Codex workers. Each worker has its
+own conversation; the orchestrator supplies its task and reviews its result. It
+chooses when delegation is useful, rather than sending every task to every model.
+
+These choices belong to the thread. Change them between turns; switching work mode
+keeps the conversation. Web and desktop combine the choices in **Thread models**;
+on mobile, choose the orchestrator in model settings and workers in **Thread models**.
+Older threads retain their existing account selections until you choose specific
+models. Project and global orchestrator settings do not control delegation.
 
 ## Answer questions while Codex works
 
