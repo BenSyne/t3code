@@ -2855,16 +2855,17 @@ usageLimitLayer("CodexAdapterLive usage limits", (it) => {
         events.map((event) => event.type),
         [
           "account.rate-limits.updated",
-          "runtime.error",
           "turn.completed",
           "runtime.error",
           "turn.completed",
+          "runtime.error",
         ],
       );
       for (const event of events) {
         if (event.type === "runtime.error") {
           NodeAssert.equal(event.payload.message, expected);
           NodeAssert.equal(event.payload.detail, CODEX_OUT_OF_CREDITS);
+          NodeAssert.equal(event.payload.usageLimitReached, true);
         }
         if (event.type === "turn.completed") {
           NodeAssert.equal(event.payload.errorMessage, expected);
@@ -2963,7 +2964,7 @@ usageLimitLayer("CodexAdapterLive usage limits", (it) => {
       const expected = "Codex usage limit reached. Send the message again once the limit resets.";
       NodeAssert.deepStrictEqual(
         events.map((event) => event.type),
-        ["runtime.error", "turn.completed"],
+        ["turn.completed", "runtime.error"],
       );
       const runtimeError = events.find((event) => event.type === "runtime.error");
       NodeAssert.equal(runtimeError?.payload.message, expected);

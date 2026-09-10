@@ -4381,6 +4381,10 @@ describe("ClaudeAdapterLive", () => {
         runtimeEvents.find((event) => event.type === "runtime.warning")?.payload.detail,
         rateLimitInfo,
       );
+      assert.equal(
+        runtimeEvents.find((event) => event.type === "runtime.warning")?.payload.usageLimitReached,
+        true,
+      );
       // The raw telemetry event still flows for every copy.
       assert.equal(
         runtimeEvents.filter((event) => event.type === "account.rate-limits.updated").length,

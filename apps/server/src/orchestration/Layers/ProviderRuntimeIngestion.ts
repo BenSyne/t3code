@@ -429,6 +429,12 @@ export function runtimeEventToActivities(
           summary: "Runtime error",
           payload: {
             message: truncateDetail(event.payload.message),
+            ...(event.payload.usageLimitReached
+              ? {
+                  usageLimitReached: true,
+                  providerInstanceId: event.providerInstanceId,
+                }
+              : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -468,6 +474,12 @@ export function runtimeEventToActivities(
           summary: truncateDetail(event.payload.message, 120),
           payload: {
             message: truncateDetail(event.payload.message),
+            ...(event.payload.usageLimitReached
+              ? {
+                  usageLimitReached: true,
+                  providerInstanceId: event.providerInstanceId,
+                }
+              : {}),
             ...(event.payload.detail !== undefined ? { detail: event.payload.detail } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
@@ -1482,6 +1494,17 @@ const make = Effect.gen(function* () {
 
       const thread = yield* resolveThreadRuntimeContext(event.threadId);
       if (!thread) return;
+
+      // A replaced account may finish draining after the replacement session starts.
+      // Its late events must never close or overwrite the new session.
+      if (
+        event.providerInstanceId !== undefined &&
+        thread.session?.providerInstanceId !== undefined &&
+        event.providerInstanceId !== thread.session.providerInstanceId &&
+        event.type !== "session.started" &&
+        event.type !== "thread.started"
+      )
+        return;
 
       const now = event.createdAt;
       const eventTurnId = toTurnId(event.turnId);

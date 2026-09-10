@@ -1,6 +1,7 @@
 import {
   EventId,
   ProviderDriverKind,
+  ProviderInstanceId,
   RuntimeTaskId,
   ThreadId,
   type ProviderRuntimeEvent,
@@ -16,6 +17,26 @@ const base = {
 };
 
 describe("runtimeEventToActivities task progress", () => {
+  it("persists explicit account exhaustion without treating ordinary errors as quota failures", () => {
+    const instanceId = ProviderInstanceId.make("codex_backup");
+    const event = {
+      ...base,
+      providerInstanceId: instanceId,
+      eventId: EventId.make("limit-event"),
+      type: "runtime.error",
+      payload: { message: "Limit reached", usageLimitReached: true },
+    } satisfies ProviderRuntimeEvent;
+    expect(runtimeEventToActivities(event)[0]?.payload).toMatchObject({
+      usageLimitReached: true,
+      providerInstanceId: instanceId,
+    });
+    expect(
+      runtimeEventToActivities({ ...event, payload: { message: "Network error" } })[0]?.payload,
+    ).not.toHaveProperty("usageLimitReached");
+    expect(
+      runtimeEventToActivities({ ...event, type: "runtime.warning" })[0]?.payload,
+    ).toMatchObject({ usageLimitReached: true, providerInstanceId: instanceId });
+  });
   it("persists usage independently from replaceable activity", () => {
     const taskId = RuntimeTaskId.make("agent-1");
     const usageOnly = {

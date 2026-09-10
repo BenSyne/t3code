@@ -10,6 +10,8 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSetupError,
+  type ServerProvider,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
@@ -145,6 +147,217 @@ describe("ProviderCommandReactor", () => {
     createdBaseDirs.clear();
   });
 
+  effectIt.effect(
+    "continues through substitutes in order with the native cursor and same model, then stops",
+    () =>
+      Effect.gen(function* () {
+        const main = ProviderInstanceId.make("codex");
+        const backup = ProviderInstanceId.make("codex_backup");
+        const last = ProviderInstanceId.make("codex_last");
+        const wrongModel = ProviderInstanceId.make("codex_other_model");
+        const firstSent = yield* Deferred.make<void>();
+        const secondSent = yield* Deferred.make<void>();
+        const stopped = yield* Deferred.make<void>();
+        let sendCount = 0;
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            accountFallbacks: { [main]: [wrongModel, backup, last] },
+            providers: [backup, last, wrongModel].map((instanceId) => ({
+              instanceId,
+              driver: ProviderDriverKind.make("codex"),
+              enabled: true,
+              installed: true,
+              status: "ready",
+              version: null,
+              checkedAt: "2026-01-01T00:00:00.000Z",
+              auth: { status: "authenticated" },
+              slashCommands: [],
+              skills: [],
+              models: [
+                {
+                  slug: instanceId === wrongModel ? "another-model" : "gpt-5-codex",
+                  name: "Test model",
+                  isCustom: false,
+                  capabilities: null,
+                },
+              ],
+            })),
+            sendTurnEffect: () =>
+              Deferred.succeed(++sendCount === 1 ? firstSent : secondSent, undefined).pipe(
+                Effect.asVoid,
+              ),
+            stopSessionEffect: () => Deferred.succeed(stopped, undefined).pipe(Effect.asVoid),
+          }),
+        );
+        const threadId = ThreadId.make("thread-1");
+        const now = "2026-01-01T00:00:00.000Z";
+        const cursor = { threadId: "native-history-retained" };
+        harness.runtimeSessions.push({
+          threadId,
+          providerInstanceId: main,
+          provider: ProviderDriverKind.make("codex"),
+          status: "ready",
+          runtimeMode: "approval-required",
+          resumeCursor: cursor,
+          model: "gpt-5-codex",
+          createdAt: now,
+          updatedAt: now,
+        });
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("fallback-seed"),
+          threadId,
+          createdAt: now,
+          session: {
+            threadId,
+            providerInstanceId: main,
+            providerName: "codex",
+            status: "ready",
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: now,
+          },
+        });
+        const exhaust = (id: ProviderInstanceId, suffix: string) =>
+          harness.engine.dispatch({
+            type: "thread.activity.append",
+            commandId: CommandId.make(`exhaust:${suffix}`),
+            threadId,
+            createdAt: now,
+            activity: {
+              id: EventId.make(`exhaust:${suffix}`),
+              kind: "runtime.error",
+              tone: "error",
+              summary: "Usage limit reached",
+              payload: { usageLimitReached: true, providerInstanceId: id },
+              turnId: null,
+              createdAt: now,
+            },
+          });
+        yield* exhaust(main, "first");
+        yield* Deferred.await(firstSent);
+        yield* Effect.promise(() => harness.drain());
+        expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+          providerInstanceId: backup,
+          resumeCursor: cursor,
+          modelSelection: { instanceId: backup, model: "gpt-5-codex" },
+        });
+        yield* exhaust(main, "duplicate-old-account");
+        yield* exhaust(backup, "second");
+        yield* Deferred.await(secondSent);
+        yield* Effect.promise(() => harness.drain());
+        expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
+          providerInstanceId: last,
+          resumeCursor: cursor,
+        });
+        yield* exhaust(last, "last");
+        yield* Deferred.await(stopped);
+        yield* Effect.promise(() => harness.drain());
+        expect(harness.startSession).toHaveBeenCalledTimes(2);
+        const thread = (yield* Effect.promise(() => harness.readModel())).threads[0]!;
+        expect(thread.session?.status).toBe("stopped");
+        expect(
+          thread.activities.some(
+            (activity) => activity.summary === "All substitute accounts exhausted or unavailable",
+          ),
+        ).toBe(true);
+        expect(thread.messages).toHaveLength(2);
+      }),
+  );
+
+  effectIt.effect("a user interrupt during account handoff prevents automatic continuation", () =>
+    Effect.gen(function* () {
+      const main = ProviderInstanceId.make("codex");
+      const backup = ProviderInstanceId.make("codex_backup");
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const stopped = yield* Deferred.make<void>();
+      const now = "2026-01-01T00:00:00.000Z";
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          accountFallbacks: { [main]: [backup] },
+          providers: [
+            {
+              instanceId: backup,
+              driver: ProviderDriverKind.make("codex"),
+              enabled: true,
+              installed: true,
+              status: "ready",
+              version: null,
+              checkedAt: now,
+              auth: { status: "authenticated" },
+              slashCommands: [],
+              skills: [],
+              models: [{ slug: "gpt-5-codex", name: "Test", isCustom: false, capabilities: null }],
+            },
+          ],
+          startSessionEffect: (session) =>
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.as(session),
+            ),
+          stopSessionEffect: () => Deferred.succeed(stopped, undefined).pipe(Effect.asVoid),
+        }),
+      );
+      const threadId = ThreadId.make("thread-1");
+      harness.runtimeSessions.push({
+        threadId,
+        providerInstanceId: main,
+        provider: ProviderDriverKind.make("codex"),
+        status: "ready",
+        runtimeMode: "approval-required",
+        resumeCursor: { saved: true },
+        model: "gpt-5-codex",
+        createdAt: now,
+        updatedAt: now,
+      });
+      yield* harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cancel-seed"),
+        threadId,
+        createdAt: now,
+        session: {
+          threadId,
+          providerInstanceId: main,
+          providerName: "codex",
+          status: "ready",
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: now,
+        },
+      });
+      yield* harness.engine.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make("cancel-limit"),
+        threadId,
+        createdAt: now,
+        activity: {
+          id: EventId.make("cancel-limit"),
+          kind: "runtime.error",
+          tone: "error",
+          summary: "Usage limit",
+          payload: { usageLimitReached: true, providerInstanceId: main },
+          turnId: null,
+          createdAt: now,
+        },
+      });
+      yield* Deferred.await(started);
+      yield* harness.engine.dispatch({
+        type: "thread.turn.interrupt",
+        commandId: CommandId.make("cancel-during-handoff"),
+        threadId,
+        createdAt: now,
+      });
+      yield* Deferred.succeed(release, undefined);
+      yield* Deferred.await(stopped);
+      yield* Effect.promise(() => harness.drain());
+      expect(harness.sendTurn).not.toHaveBeenCalled();
+      expect(harness.runtimeSessions).toEqual([]);
+    }),
+  );
+
   describe("provider error attribution", () => {
     it("uses the current provider instance slug when current instance lookup fails", () => {
       expect(
@@ -166,6 +379,9 @@ describe("ProviderCommandReactor", () => {
   });
 
   async function createHarness(input?: {
+    readonly accountFallbacks?: ServerSettings["providerAccountFallbacks"];
+    readonly providers?: ReadonlyArray<ServerProvider>;
+    readonly sendTurnEffect?: () => Effect.Effect<void>;
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
@@ -256,16 +472,22 @@ describe("ProviderCommandReactor", () => {
       return (startSessionEffect?.(session) ?? Effect.succeed(session)).pipe(
         Effect.tap((startedSession) =>
           Effect.sync(() => {
+            const previous = runtimeSessions.findIndex(
+              (session) => session.threadId === startedSession.threadId,
+            );
+            if (previous >= 0) runtimeSessions.splice(previous, 1);
             runtimeSessions.push(startedSession);
           }),
         ),
       );
     });
     const sendTurn = vi.fn((_: unknown) =>
-      Effect.succeed({
-        threadId: ThreadId.make("thread-1"),
-        turnId: asTurnId("turn-1"),
-      }),
+      (input?.sendTurnEffect?.() ?? Effect.void).pipe(
+        Effect.as({
+          threadId: ThreadId.make("thread-1"),
+          turnId: asTurnId("turn-1"),
+        }),
+      ),
     );
     const compactThread = vi.fn((_: ThreadId) => input?.compactThreadEffect?.() ?? Effect.void);
     const interruptTurn = vi.fn((_: unknown) => input?.interruptTurnEffect?.() ?? Effect.void);
@@ -450,7 +672,9 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
       Layer.provide(Layer.mock(ProviderAuthService, { tryHandlePromptCommand })),
-      Layer.provideMerge(makeProviderRegistryLayer(providerSnapshots as never)),
+      Layer.provideMerge(
+        makeProviderRegistryLayer(input?.providers ?? (providerSnapshots as never)),
+      ),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           renameBranch,
@@ -475,7 +699,11 @@ describe("ProviderCommandReactor", () => {
           generateThreadTitle,
         }),
       ),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(
+        ServerSettingsService.layerTest({
+          providerAccountFallbacks: input?.accountFallbacks ?? {},
+        }),
+      ),
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
