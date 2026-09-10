@@ -856,6 +856,7 @@ export type ToolDeniedPayload = typeof ToolDeniedPayload.Type;
 const RuntimeWarningPayload = Schema.Struct({
   message: TrimmedNonEmptyStringSchema,
   detail: Schema.optional(Schema.Unknown),
+  usageLimitReached: Schema.optional(Schema.Boolean),
 });
 export type RuntimeWarningPayload = typeof RuntimeWarningPayload.Type;
 
@@ -863,6 +864,7 @@ const RuntimeErrorPayload = Schema.Struct({
   message: TrimmedNonEmptyStringSchema,
   class: Schema.optional(RuntimeErrorClass),
   detail: Schema.optional(Schema.Unknown),
+  usageLimitReached: Schema.optional(Schema.Boolean),
 });
 export type RuntimeErrorPayload = typeof RuntimeErrorPayload.Type;
 

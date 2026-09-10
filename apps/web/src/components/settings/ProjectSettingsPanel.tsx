@@ -643,6 +643,7 @@ function ProjectDetail({
           : undefined;
         if (
           !entry?.enabled ||
+          !config ||
           !entry.isAvailable ||
           !options?.some((model) => model.slug === selection.model && !model.isUnavailable)
         ) {

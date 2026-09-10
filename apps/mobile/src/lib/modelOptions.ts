@@ -1,5 +1,6 @@
 import type {
   ModelCapabilities,
+  ProjectId,
   ModelSelection,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
@@ -61,10 +62,11 @@ function normalizeSelectionOptions(
       };
 }
 
-/** Whether a known Antigravity selection needs setup or a different model. */
+/** Whether Antigravity setup prevent using a selection. */
 export function isModelSelectionUnavailable(
   config: T3ServerConfig | null | undefined,
   selection: ModelSelection | null | undefined,
+  _projectId?: ProjectId | null,
 ): boolean {
   if (!config || !selection) {
     return false;
@@ -150,6 +152,7 @@ export function resolveNewTaskModelSelection(input: {
 export function buildModelOptions(
   config: T3ServerConfig | null | undefined,
   fallbackModelSelection: ModelSelection | null,
+  projectId?: ProjectId | null,
 ): ReadonlyArray<ModelOption> {
   const options = new Map<string, ModelOption>();
 
@@ -222,7 +225,7 @@ export function buildModelOptions(
         providerDriver,
         isDefault: false,
         isLegacy: model?.isLegacy === true,
-        ...(isModelSelectionUnavailable(config, fallbackModelSelection)
+        ...(isModelSelectionUnavailable(config, fallbackModelSelection, projectId)
           ? { isUnavailable: true }
           : {}),
         capabilities: model?.capabilities ?? null,

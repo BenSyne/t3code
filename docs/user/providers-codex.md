@@ -6,6 +6,29 @@ and custom binaries or environment variables.
 
 ## Use multiple accounts
 
+In **Settings > Providers > Subscription accounts**, select **Add Codex subscription**,
+enter a distinct name, and choose a main account if you have more than one.
+Sign in to the new account using the displayed device code. Enable device code
+authorization in that account's **ChatGPT > Settings > Security** first; the
+information icon beside **Sign in** explains the steps. T3 Code prepares its private login
+directory and shares conversation storage with the main account. The accounts
+and credentials belong to the connected environment, including when you connect
+remotely.
+
+T3 checks the account identity, not just the plan name. A substitute signed into
+the same account is marked **Duplicate subscription** and skipped during automatic
+continuation. Select **Use different account** to reconnect it. Accounts whose
+identity cannot be verified are also skipped until verification succeeds.
+
+New accounts become substitutes for the selected main account. Reorder them,
+change the main account, or remove an account from the substitute list in the
+same section. A confirmed usage limit switches to the next available account
+with the same model and saved conversation. Network errors do not trigger a
+switch. When every substitute is exhausted or unavailable, the task stops with
+its conversation saved. The activity log records each switch or skipped account.
+
+The following manual setup remains available for existing account directories.
+
 A shared Codex home with a shadow home lets work and personal accounts continue
 the same threads. The accounts share Codex sessions and configuration while keeping
 their own login and available models.
@@ -48,6 +71,36 @@ settings. If two instances show the same unexpected account or models, check the
 reported accounts, refresh provider status, and confirm the second instance has
 its own shadow path and login. A shadow-home conflict usually means the directory
 contains a copied Codex setup. Use a fresh shadow directory and sign in again.
+
+## Use a subscription as the orchestrator
+
+Open **Thread models** in the chat and choose the orchestrator account and model,
+then select a working mode:
+
+- **Usage-only fallback** (the default): the orchestrator plans, builds, and verifies
+  in one conversation. T3 switches only after the provider confirms a usage limit
+  for that model. Choose which configured backups may take over in this thread.
+- **Parallel team**: choose one or more models under each worker account. The
+  orchestrator can start independent workers concurrently, read their results,
+  and integrate the work. Only the selected account and model pairs may receive
+  assignments. Workers share the project's files, so the orchestrator must keep
+  edits separate and review the combined result. Parallel work is not always faster.
+
+Backups remain reserves in either mode: they take over only at a usage limit,
+using the same model and saved conversation. Unchecked backups are excluded from
+this thread and workers it starts. Configure subscription sign-in and backup order
+in **Settings → Providers**. Automatic fallback never switches between Codex and Claude.
+
+For Codex-only work, choose a Codex orchestrator and only Codex workers and backups.
+You can also choose a Claude orchestrator with Codex workers. Each worker has its
+own conversation; the orchestrator supplies its task and reviews its result. It
+chooses when delegation is useful, rather than sending every task to every model.
+
+These choices belong to the thread. Change them between turns; switching work mode
+keeps the conversation. Web and desktop combine the choices in **Thread models**;
+on mobile, choose the orchestrator in model settings and workers in **Thread models**.
+Older threads retain their existing account selections until you choose specific
+models. Project and global orchestrator settings do not control delegation.
 
 ## Answer questions while Codex works
 

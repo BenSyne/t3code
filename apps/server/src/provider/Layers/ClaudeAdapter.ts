@@ -2300,6 +2300,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     context: ClaudeSessionContext,
     message: string,
     detail?: unknown,
+    usageLimitReached?: boolean,
   ) {
     const turnState = context.turnState;
     const stamp = yield* makeEventStamp();
@@ -2313,6 +2314,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       payload: {
         message,
         ...(detail !== undefined ? { detail } : {}),
+        ...(usageLimitReached ? { usageLimitReached: true } : {}),
       },
       providerRefs: nativeProviderRefs(context),
     });
@@ -3912,7 +3914,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             Date.parse(stamp.createdAt),
             names,
           );
-          yield* emitRuntimeWarning(context, notice, rateLimitInfo);
+          yield* emitRuntimeWarning(context, notice, rateLimitInfo, true);
         }
       }
       return;

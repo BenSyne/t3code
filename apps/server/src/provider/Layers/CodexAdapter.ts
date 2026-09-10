@@ -2387,6 +2387,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   payload: {
                     message: usageLimitMessage,
                     class: "provider_error",
+                    usageLimitReached: true,
                     ...(turnError.message ? { detail: turnError.message } : {}),
                   },
                 };
@@ -2424,7 +2425,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
               return runtimeEvent;
             });
             const runtimeEvents = usageLimitError
-              ? [usageLimitError, ...mappedEvents]
+              ? [...mappedEvents, usageLimitError]
               : mappedEvents;
             if (runtimeEvents.length === 0) {
               yield* Effect.logDebug("ignoring unhandled Codex provider event", {

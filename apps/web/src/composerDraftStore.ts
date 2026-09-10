@@ -17,6 +17,7 @@ import {
   type ScopedProjectRef,
   type ScopedThreadRef,
   ThreadId,
+  ThreadOrchestration,
   SnapShotSource,
 } from "@t3tools/contracts";
 import {
@@ -254,6 +255,7 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   // selections (project default / sticky) leave it unset so later seeds can
   // replace them; legacy entries predate the flag and read as seeded too.
   modelSelectionExplicit: Schema.optionalKey(Schema.Boolean),
+  orchestration: Schema.optionalKey(ThreadOrchestration),
   runtimeMode: Schema.optionalKey(RuntimeMode),
   interactionMode: Schema.optionalKey(ProviderInteractionMode),
 });
@@ -391,6 +393,7 @@ export interface ComposerThreadDraftState {
    * may replace it. Legacy entries predate the flag and read as seeded.
    */
   modelSelectionExplicit?: boolean;
+  orchestration?: ThreadOrchestration;
   runtimeMode: RuntimeMode | null;
   interactionMode: ProviderInteractionMode | null;
 }
@@ -560,6 +563,11 @@ interface ComposerDraftStoreState {
   setStickyModelSelection: (modelSelection: ModelSelection | null | undefined) => void;
   setPrompt: (threadRef: ComposerThreadTarget, prompt: string) => void;
   setTerminalContexts: (threadRef: ComposerThreadTarget, contexts: TerminalContextDraft[]) => void;
+  consumeModelSelection: (
+    threadRef: ComposerThreadTarget,
+    submitted: ComposerDraftModelState | null | undefined,
+  ) => void;
+  setOrchestration: (threadRef: ComposerThreadTarget, orchestration: ThreadOrchestration) => void;
   setModelSelection: (
     threadRef: ComposerThreadTarget,
     modelSelection: ModelSelection | null | undefined,
@@ -716,6 +724,15 @@ function cloneModelSelection(selection: ModelSelection): DeepMutable<ModelSelect
     ...selection,
     ...(selection.options ? { options: selection.options.map((option) => ({ ...option })) } : {}),
   } as DeepMutable<ModelSelection>;
+}
+
+function cloneOrchestration(orchestration: ThreadOrchestration): DeepMutable<ThreadOrchestration> {
+  return {
+    ...orchestration,
+    workerAccountIds: [...orchestration.workerAccountIds],
+    workerModels: orchestration.workerModels?.map(cloneModelSelection),
+    fallbackAccountIds: orchestration.fallbackAccountIds?.slice(),
+  };
 }
 
 function compactModelSelectionByProvider(
@@ -890,7 +907,8 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
-    draft.interactionMode === null
+    draft.interactionMode === null &&
+    draft.orchestration === undefined
   );
 }
 
@@ -1993,7 +2011,8 @@ function normalizePersistedDraftsByThreadId(
       reviewComments.length === 0 &&
       !hasModelData &&
       !runtimeMode &&
-      !interactionMode
+      !interactionMode &&
+      !draftCandidate.orchestration
     ) {
       continue;
     }
@@ -2021,6 +2040,11 @@ function normalizePersistedDraftsByThreadId(
             modelSelectionByProvider: compactModelSelectionByProvider(modelSelectionByProvider),
             activeProvider,
             ...(modelSelectionExplicit ? { modelSelectionExplicit: true } : {}),
+          }
+        : {}),
+      ...(draftCandidate.orchestration
+        ? {
+            orchestration: cloneOrchestration(draftCandidate.orchestration),
           }
         : {}),
       ...(runtimeMode ? { runtimeMode } : {}),
@@ -2127,7 +2151,8 @@ export function partializeComposerDraftStoreState(
       draft.reviewComments.length === 0 &&
       !hasModelData &&
       draft.runtimeMode === null &&
-      draft.interactionMode === null
+      draft.interactionMode === null &&
+      draft.orchestration === undefined
     ) {
       continue;
     }
@@ -2202,6 +2227,11 @@ export function partializeComposerDraftStoreState(
             ),
             activeProvider: draft.activeProvider,
             ...(draft.modelSelectionExplicit ? { modelSelectionExplicit: true } : {}),
+          }
+        : {}),
+      ...(draft.orchestration
+        ? {
+            orchestration: cloneOrchestration(draft.orchestration),
           }
         : {}),
       ...(draft.runtimeMode ? { runtimeMode: draft.runtimeMode } : {}),
@@ -2467,6 +2497,7 @@ function toHydratedThreadDraft(
     modelSelectionByProvider,
     activeProvider,
     ...(persistedDraft.modelSelectionExplicit ? { modelSelectionExplicit: true } : {}),
+    ...(persistedDraft.orchestration ? { orchestration: persistedDraft.orchestration } : {}),
     runtimeMode: persistedDraft.runtimeMode ?? null,
     interactionMode: persistedDraft.interactionMode ?? null,
   };
@@ -3020,6 +3051,40 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             }
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
+        },
+        consumeModelSelection: (threadRef, submitted) => {
+          if (!submitted) return;
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) return;
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            // A model edited while send was pending belongs to the next message.
+            if (
+              !current ||
+              current.activeProvider !== submitted.activeProvider ||
+              !Equal.equals(current.modelSelectionByProvider, submitted.modelSelectionByProvider)
+            )
+              return state;
+            const { modelSelectionExplicit: _explicit, ...retained } = current;
+            const draft = { ...retained, activeProvider: null, modelSelectionByProvider: {} };
+            const draftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(draft)) delete draftsByThreadKey[threadKey];
+            else draftsByThreadKey[threadKey] = draft;
+            return { draftsByThreadKey };
+          });
+        },
+        setOrchestration: (threadRef, orchestration) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) return;
+          set((state) => ({
+            draftsByThreadKey: {
+              ...state.draftsByThreadKey,
+              [threadKey]: {
+                ...(state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft()),
+                orchestration,
+              },
+            },
+          }));
         },
         setModelSelection: (threadRef, modelSelection, opts) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";

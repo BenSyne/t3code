@@ -1355,6 +1355,32 @@ describe("thread outbox", () => {
     ).toBe("remove");
   });
 
+  it("keeps a queued follow-up on the substitute after the main account reaches its limit", () => {
+    const main = ProviderInstanceId.make("codex");
+    const backup = ProviderInstanceId.make("codex_backup");
+    const message = {
+      ...queuedMessage({ messageId: "queued-before-limit", createdAt: "2026-09-01T00:00:00Z" }),
+      modelSelection: { instanceId: main, model: "astra-test" },
+    };
+    const thread = {
+      modelSelection: { instanceId: backup, model: "astra-test" },
+      runtimeMode: "full-access" as const,
+      interactionMode: "default" as const,
+    };
+    const settings = { providerAccountFallbacks: { [main]: [backup] } };
+    expect(resolveQueuedThreadSettings(message, thread, [], settings).modelSelection).toEqual(
+      thread.modelSelection,
+    );
+    expect(
+      resolveQueuedThreadSettings(
+        { ...message, modelSelection: { instanceId: main, model: "another-model" } },
+        thread,
+        [],
+        settings,
+      ).modelSelection.instanceId,
+    ).toBe(main);
+  });
+
   it("round-trips queued creations and gates incomplete ones from sending", () => {
     const base = queuedMessage({
       messageId: "message-1",
@@ -1365,6 +1391,10 @@ describe("thread outbox", () => {
       modelSelection: {
         instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5.4",
+      },
+      orchestration: {
+        mode: "delegated",
+        workerAccountIds: [ProviderInstanceId.make("claudeAgent")],
       },
       creation: {
         projectId: ProjectId.make("project-1"),

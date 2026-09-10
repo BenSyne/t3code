@@ -1434,6 +1434,7 @@ describe("mobile composer drafts", () => {
         model: "gpt-5.4",
         options: [{ id: "reasoningEffort", value: "xhigh" }],
       },
+      orchestration: { mode: "delegated", workerAccountIds: [ProviderInstanceId.make("codex")] },
       workspaceSelection: {
         mode: "worktree",
         branch: "main",
@@ -1444,6 +1445,7 @@ describe("mobile composer drafts", () => {
     expect(clearComposerDraftContentState({ [draftKey]: draft }, draftKey)).toEqual({
       [draftKey]: {
         modelSelection: draft.modelSelection,
+        orchestration: draft.orchestration,
         workspaceSelection: draft.workspaceSelection,
         text: "",
         attachments: [],
@@ -1460,6 +1462,7 @@ describe("mobile composer drafts", () => {
         instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5.4",
       },
+      orchestration: { mode: "delegated", workerAccountIds: [ProviderInstanceId.make("codex")] },
       workspaceSelection: {
         mode: "worktree",
         branch: "main",

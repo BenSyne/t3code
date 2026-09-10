@@ -4798,12 +4798,16 @@ const decodeBrowserAccessThreadShell = Schema.decodeUnknownEffect(OrchestrationT
 
 describe("agent browser access", () => {
   const revokedThreads: Array<ThreadId> = [];
+  const issuedCapabilities: Array<ReadonlyArray<string>> = [];
   const projectId = ProjectId.make("project-browser-access");
 
   const startSessionWith = (
     enableAgentBrowserAccess: boolean,
     threadId: ThreadId,
     projectOverride?: boolean,
+    orchestration = false,
+    allowedAccounts?: ReadonlyArray<ProviderInstanceId>,
+    excludeAfterStart = false,
   ) =>
     Effect.gen(function* () {
       const issued: Array<ThreadId> = [];
@@ -4843,6 +4847,10 @@ describe("agent browser access", () => {
                 id: threadId,
                 projectId,
                 title: "Browser access test",
+                orchestration: {
+                  mode: orchestration ? "delegated" : "same-account",
+                  workerAccountIds: [],
+                },
                 modelSelection: createModelSelection(codexInstanceId, "gpt-5.4"),
                 runtimeMode: "full-access",
                 branch: null,
@@ -4866,6 +4874,7 @@ describe("agent browser access", () => {
         issueMcpCredential: (request) =>
           Effect.sync(() => {
             issued.push(request.threadId);
+            issuedCapabilities.push(request.capabilities ?? ["preview"]);
             return undefined;
           }),
         revokeMcpCredential: (revoked) => Effect.sync(() => void revokedThreads.push(revoked)),
@@ -4873,9 +4882,14 @@ describe("agent browser access", () => {
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
         Layer.provide(projectionLayer),
-        Layer.provide(
+        Layer.provideMerge(
           ServerSettings.ServerSettingsService.layerTest({
             enableAgentBrowserAccess,
+            projectProviderAccounts:
+              allowedAccounts === undefined ? {} : { [projectId]: allowedAccounts },
+            ...(orchestration
+              ? { orchestratorModelSelection: { instanceId: codexInstanceId, model: "astra-test" } }
+              : {}),
             projectAgentBrowserAccessOverrides:
               projectOverride === undefined ? {} : { [projectId]: projectOverride },
           }),
@@ -4892,16 +4906,49 @@ describe("agent browser access", () => {
 
       yield* Effect.gen(function* () {
         const provider = yield* ProviderService.ProviderService;
-        return yield* provider.startSession(threadId, {
+        const started = yield* provider.startSession(threadId, {
           provider: CODEX_DRIVER,
           providerInstanceId: codexInstanceId,
           threadId,
           runtimeMode: "full-access",
         });
+        if (excludeAfterStart) {
+          const settings = yield* ServerSettings.ServerSettingsService;
+          yield* settings.updateSettings({ projectProviderAccounts: { [projectId]: [] } });
+          yield* provider.sendTurn({ threadId, input: "Continue" });
+        }
+        return started;
       }).pipe(Effect.provide(providerLayer));
 
       return issued;
     });
+
+  it.effect("ignores legacy project account restrictions for a direct thread", () =>
+    Effect.gen(function* () {
+      const result = yield* startSessionWith(
+        false,
+        asThreadId("excluded-account"),
+        undefined,
+        false,
+        [],
+      );
+      assert.deepEqual(result, []);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("continues a direct thread after legacy project restrictions change", () =>
+    Effect.gen(function* () {
+      const result = yield* startSessionWith(
+        false,
+        asThreadId("excluded-after-start"),
+        undefined,
+        false,
+        [codexInstanceId],
+        true,
+      );
+      assert.deepEqual(result, []);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 
   // Credential issuance is the observable that matters: it is the only place a
   // credential is minted, and `/mcp` accepts nothing else, so withholding it is
@@ -4911,6 +4958,16 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith(false, asThreadId("thread-browser-off"));
 
       assert.deepEqual(issued, []);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("grants orchestration tools independently of disabled browser access", () =>
+    Effect.gen(function* () {
+      issuedCapabilities.length = 0;
+      const threadId = asThreadId("thread-orchestrator-browser-off");
+      const issued = yield* startSessionWith(false, threadId, undefined, true);
+      assert.deepEqual(issued, [threadId]);
+      assert.deepEqual(issuedCapabilities, [["orchestration"]]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

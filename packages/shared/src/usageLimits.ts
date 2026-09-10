@@ -7,6 +7,9 @@
  */
 import {
   type EnvironmentId,
+  type ModelSelection,
+  type ServerSettings,
+  type ThreadOrchestration,
   type UsageLimitsReport,
   type ProviderInstanceId,
   type ProviderConsumeResetCreditInput,
@@ -20,10 +23,134 @@ import {
 } from "@t3tools/contracts";
 
 import * as DateTime from "effect/DateTime";
+import {
+  getSubscriptionFallbackIssue,
+  resolveThreadWorkerModels,
+  threadAccountFallbacks,
+} from "./serverSettings.ts";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
+
+export interface ThreadUsageAccount {
+  readonly instanceId: ProviderInstanceId;
+  readonly provider: ServerProvider | undefined;
+  readonly models: ReadonlyArray<{
+    readonly model: string;
+    readonly name: string;
+    readonly roles: ReadonlyArray<"Orchestrator" | "Orchestrator & builder" | "Worker" | "Backup">;
+  }>;
+  readonly windows: ReadonlyArray<ServerProviderUsageWindow>;
+  readonly notice: string | null;
+  readonly checkedAt: string | undefined;
+}
+
+/** Selected models and their permitted substitutes, grouped by the account that owns the quota. */
+export function collectThreadUsageLimits(
+  selection: ModelSelection,
+  orchestration: ThreadOrchestration,
+  settings: Pick<ServerSettings, "providerAccountFallbacks">,
+  providers: ReadonlyArray<ServerProvider>,
+): ReadonlyArray<ThreadUsageAccount> {
+  type Role = ThreadUsageAccount["models"][number]["roles"][number];
+  const active: Array<{ selection: ModelSelection; role: Role }> = [
+    {
+      selection,
+      role: orchestration.mode === "same-account" ? "Orchestrator & builder" : "Orchestrator",
+    },
+    ...(orchestration.mode === "delegated"
+      ? resolveThreadWorkerModels(orchestration, providers)
+          .filter((worker) => orchestration.workerAccountIds.includes(worker.instanceId))
+          .map((worker) => ({ selection: worker, role: "Worker" as const }))
+      : []),
+  ];
+  const byId = new Map(providers.map((provider) => [provider.instanceId, provider]));
+  const involved: Array<{ selection: ModelSelection; role: Role; name?: string }> = [
+    ...active,
+    ...active.flatMap((entry) => {
+      const name = byId
+        .get(entry.selection.instanceId)
+        ?.models.find((model) => model.slug === entry.selection.model)?.name;
+      return threadAccountFallbacks(settings, orchestration, entry.selection.instanceId).map(
+        (instanceId) => ({
+          selection: { ...entry.selection, instanceId },
+          role: "Backup" as const,
+          ...(name ? { name } : {}),
+        }),
+      );
+    }),
+  ];
+  const groups = new Map<
+    ProviderInstanceId,
+    Array<{ model: string; name: string; roles: Role[] }>
+  >();
+  for (const entry of involved) {
+    const { instanceId, model } = entry.selection;
+    const models = groups.get(instanceId) ?? [];
+    const existing = models.find((candidate) => candidate.model === model);
+    if (existing) {
+      if (!existing.roles.includes(entry.role)) existing.roles.push(entry.role);
+    } else {
+      models.push({
+        model,
+        name:
+          byId.get(instanceId)?.models.find((candidate) => candidate.slug === model)?.name ??
+          entry.name ??
+          model,
+        roles: [entry.role],
+      });
+    }
+    groups.set(instanceId, models);
+  }
+  const words = (value: string) =>
+    ` ${value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()} `;
+  return [...groups].map(([instanceId, models]) => {
+    const provider = byId.get(instanceId);
+    const blocked = !provider
+      ? "Account is no longer available."
+      : !provider.enabled
+        ? "Account is disabled."
+        : !provider.installed
+          ? "Provider CLI is not installed."
+          : provider.auth.status === "unauthenticated"
+            ? "Sign in to see subscription usage."
+            : !isProviderAvailable(provider)
+              ? "Account is unavailable."
+              : (getSubscriptionFallbackIssue(settings, providers, instanceId)?.message ?? null);
+    const limits = provider?.usageLimits;
+    const windows =
+      blocked || limits?.unavailable?.reason === "unsupported"
+        ? []
+        : (limits?.windows ?? []).filter((window) => {
+            const family = window.modelFamily;
+            return (
+              !family ||
+              models.some(
+                (model) =>
+                  words(model.model).includes(words(family)) ||
+                  words(model.name).includes(words(family)),
+              )
+            );
+          });
+    const notice =
+      blocked ??
+      (limits
+        ? limitsNotice({ ...limits, windows })
+        : "This provider has not reported subscription usage.");
+    return {
+      instanceId,
+      provider,
+      models,
+      windows,
+      notice,
+      checkedAt: blocked ? undefined : limits?.checkedAt,
+    };
+  });
+}
 
 /**
  * Providers that belong on the Limits view: enabled, installed, and one whose

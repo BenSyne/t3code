@@ -403,6 +403,7 @@ export async function restoreRejectedQueuedMessage(
     }
     updateComposerDraftSettings(draftKey, {
       ...(queuedMessage.modelSelection ? { modelSelection: queuedMessage.modelSelection } : {}),
+      ...(queuedMessage.orchestration ? { orchestration: queuedMessage.orchestration } : {}),
       ...(queuedMessage.runtimeMode ? { runtimeMode: queuedMessage.runtimeMode } : {}),
       ...(queuedMessage.interactionMode ? { interactionMode: queuedMessage.interactionMode } : {}),
       ...(queuedMessage.creation
@@ -688,7 +689,12 @@ export function useThreadOutboxDrain(): void {
         serverEnvironment.configValueAtom(queuedMessage.environmentId),
       );
       if (!serverConfig) return false;
-      const settings = resolveQueuedThreadSettings(queuedMessage, thread, serverConfig.providers);
+      const settings = resolveQueuedThreadSettings(
+        queuedMessage,
+        thread,
+        serverConfig.providers,
+        serverConfig.settings,
+      );
       if (isModelSelectionUnavailable(serverConfig, settings.modelSelection)) {
         return restoreQueuedMessage(
           queuedMessage,
@@ -792,6 +798,7 @@ export function useThreadOutboxDrain(): void {
         queuedMessage,
         settings,
         currentConfig.providers,
+        currentConfig.settings,
       );
       const deliveryResult = await startTurn({
         environmentId: queuedMessage.environmentId,
@@ -857,6 +864,7 @@ export function useThreadOutboxDrain(): void {
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         },
         serverConfig.providers,
+        serverConfig.settings,
       );
       if (isModelSelectionUnavailable(serverConfig, settings.modelSelection)) {
         return restoreQueuedMessage(
@@ -912,6 +920,7 @@ export function useThreadOutboxDrain(): void {
         queuedMessage,
         settings,
         currentConfig.providers,
+        currentConfig.settings,
       );
       const deliveryResult = await startTurn({
         environmentId: queuedMessage.environmentId,
@@ -924,6 +933,7 @@ export function useThreadOutboxDrain(): void {
           createdAt: queuedMessage.createdAt,
           text: queuedMessage.text.trim(),
           uploadedAttachments: prepared.attachments,
+          ...(queuedMessage.orchestration ? { orchestration: queuedMessage.orchestration } : {}),
           modelSelection: sendSettings.modelSelection,
           runtimeMode: sendSettings.runtimeMode,
           interactionMode: sendSettings.interactionMode,

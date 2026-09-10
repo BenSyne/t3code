@@ -889,9 +889,23 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     ),
   );
 
+  const threadOrchestration = Effect.fn("ProviderService.threadOrchestration")(function* (
+    threadId: ThreadId,
+  ) {
+    if (Option.isNone(projectionQuery)) return undefined;
+    const thread = yield* projectionQuery.value
+      .getThreadShellById(threadId)
+      .pipe(Effect.catch(() => Effect.succeed(Option.none())));
+    return Option.isSome(thread) ? thread.value.orchestration : undefined;
+  });
+
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
-      if (!(yield* agentBrowserAccessEnabled(threadId))) {
+      const capabilities: Array<"preview" | "orchestration"> = [];
+      if (yield* agentBrowserAccessEnabled(threadId)) capabilities.push("preview");
+      if ((yield* threadOrchestration(threadId))?.mode === "delegated")
+        capabilities.push("orchestration");
+      if (capabilities.length === 0) {
         // Revoke as well as clear. Every other prepare path reaches
         // `issueActiveMcpCredential`, which revokes the thread first, so
         // skipping it here would leave a previously issued bearer token valid
@@ -902,7 +916,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         yield* Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId));
         return undefined;
       }
-      const credential = yield* issueMcpCredential({ threadId, providerInstanceId });
+      const credential = yield* issueMcpCredential({ threadId, providerInstanceId, capabilities });
       if (credential) {
         yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
       }
@@ -1151,6 +1165,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     readonly operation: string;
   }) {
     const bindingInstanceId = yield* requireBindingInstanceId(input.operation, input.binding);
+
     yield* Effect.annotateCurrentSpan({
       "provider.operation": "recover-session",
       "provider.kind": input.binding.provider,
@@ -1328,6 +1343,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         "ProviderService.startSession",
         parsed,
       );
+
       let metricProvider = parsed.provider ?? String(resolvedInstanceId);
       yield* Effect.annotateCurrentSpan({
         "provider.operation": "start-session",
@@ -1576,6 +1592,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       );
     }
 
+    const orchestration = yield* threadOrchestration(parsed.threadId);
+    if (orchestration)
+      appendAttachmentContext(
+        orchestration.mode === "delegated"
+          ? "You are the T3 Code orchestrator for this thread. Use the t3_accounts, t3_tasks, t3_delegate, t3_read_task, and t3_message_task MCP tools to coordinate work when useful. Choose worker accounts and models from t3_accounts; only the exact account and model pairs selected for this thread may receive work. You may start multiple independent workers before waiting for their results, so they run in parallel. Use only as many workers as the task benefits from; do not split tightly dependent work just to use every selected model. Give each worker a concrete bounded task, inspect results, and integrate and verify the work before reporting completion. Workers share this project's working directory; avoid overlapping edits. Preserve the user's constraints and ask before destructive actions. Keep your own conversation as the durable record of the plan and worker task IDs. Never claim a worker finished without reading its result."
+          : "This T3 Code thread uses the same account and model for orchestration and development. Plan, implement, and verify the work in this conversation. Do not delegate work to other T3 accounts. T3 handles switching to configured substitute accounts only when the selected model reaches a usage limit.",
+      );
     const input = {
       ...parsed,
       ...(inputTextWithAttachmentContext !== undefined
@@ -1596,6 +1619,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         operation: "ProviderService.sendTurn",
         allowRecovery: false,
       });
+
       if (
         input.continuation === true &&
         !input.input &&

@@ -39,6 +39,13 @@ the dialog.
 
 ## Track subscription limits
 
+Open **Usage** beside the thread's model selector to see the orchestrator, selected worker
+models, and enabled backup accounts. The list follows changes in **Thread models**. Each bar
+shows the percentage **used** and its reset time. Models on the same account share its quota;
+model-specific windows appear when the provider reports them. These are subscription totals
+across all conversations, not usage spent only in this thread. Choose **Refresh** to check the
+selected accounts again. Accounts without reported limits show an explanation instead of a bar.
+
 **Usage → Limits** pools every subscription account it can see per provider, so with several Codex
 or Claude accounts across your environments and hubs you read one number per window rather than a
 list. Each window card shows how much of the pool is left and a bar with one segment per account,
@@ -57,7 +64,7 @@ Filter with the environment dropdown to see what a single machine has.
 If a window looks stale, refresh Limits to re-check every provider and hub.
 
 Pick `/usage-limits` from the composer's command menu, or send it as a message, to check the
-current model's limits without leaving the conversation. The result opens above the composer and
+current provider's accounts without leaving the conversation. The result opens above the composer and
 closes when you dismiss it or send your next message. It uses the same snapshot as **Usage → Limits**, so it does not run the agent or refresh
 anything. The command is offered only for providers that appear under **Usage → Limits**.
 

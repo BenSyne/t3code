@@ -1,3 +1,5 @@
+import { ThreadWorkingAccounts } from "./ThreadWorkingAccounts";
+import { ThreadUsageLimits } from "./ComposerUsageLimits";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
   questionAttachmentDraftId,
@@ -10,6 +12,7 @@ import type {
   ChatFileAttachment,
   EnvironmentId,
   ModelSelection,
+  ThreadOrchestration,
   PreviewAnnotationPayload,
   ProviderApprovalDecision,
   ProviderInteractionMode,
@@ -1313,6 +1316,9 @@ export interface ChatComposerProps {
   providerStatuses: ServerProvider[];
   /** False until the environment's server config has arrived at least once. */
   providerCatalogKnown: boolean;
+  orchestration: ThreadOrchestration;
+  orchestrationSaving: boolean;
+  onOrchestrationChange: (value: ThreadOrchestration) => void;
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
 
@@ -4144,53 +4150,66 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           data-resting-controls-separator="true"
         />
       ) : null}
-      <ProviderModelPicker
-        isComposerOwned
-        compact={composerControlsCompact}
-        disabled={providerCatalogPending}
-        activeInstanceId={
-          providerCatalogPending
-            ? (activeThreadModelSelection?.instanceId ?? selectedInstanceId)
-            : selectedInstanceId
-        }
-        model={
-          providerCatalogPending
-            ? (activeThreadModelSelection?.model ?? selectedModelForPickerWithCustomFallback)
-            : selectedModelForPickerWithCustomFallback
-        }
-        lockedProvider={lockedProvider}
-        lockedContinuationGroupKey={lockedContinuationGroupKey}
-        instanceEntries={providerInstanceEntries}
-        keybindings={keybindings}
-        modelOptionsByInstance={modelOptionsByInstance}
-        size={composerControlsInStrip ? "xs" : "sm"}
-        triggerClassName={
-          composerControlsInStrip
-            ? "min-w-13 shrink text-xs! @max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:w-0 @max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:flex-none"
-            : "-ms-2.5"
-        }
-        terminalOpen={terminalOpen}
+      <ThreadWorkingAccounts
         open={isComposerModelPickerOpen}
-        instanceIndicatorBackground={
-          composerControlsInStrip
-            ? "color-mix(in srgb, var(--chat-composer-glass-surface) var(--glass-opacity), transparent)"
-            : "var(--contrast-input)"
-        }
-        {...(composerProviderState.modelPickerIconClassName || composerControlsInStrip
-          ? {
-              activeProviderIconClassName: cn(
-                composerProviderState.modelPickerIconClassName,
-                composerControlsInStrip &&
-                  "fill-muted-foreground/70! text-muted-foreground/70! [&_path]:fill-muted-foreground/70! [&_rect]:fill-muted-foreground/70! [&_[data-opencode-hole]]:fill-transparent!",
-              ),
-            }
-          : {})}
         onOpenChange={setIsComposerModelPickerOpen}
-        getModelDisabledReason={getModelDisabledReason}
-        onInstanceModelChange={onProviderModelSelect}
-        onOpenProviderSetup={onOpenProviderSetup}
+        orchestratorPicker={
+          <ProviderModelPicker
+            isComposerOwned
+            triggerAriaLabel="Choose orchestrator account and model"
+            disabled={
+              providerCatalogPending ||
+              isSendBusy ||
+              isConnecting ||
+              phase === "running" ||
+              props.orchestrationSaving
+            }
+            activeInstanceId={
+              providerCatalogPending
+                ? (activeThreadModelSelection?.instanceId ?? selectedInstanceId)
+                : selectedInstanceId
+            }
+            model={
+              providerCatalogPending
+                ? (activeThreadModelSelection?.model ?? selectedModelForPickerWithCustomFallback)
+                : selectedModelForPickerWithCustomFallback
+            }
+            lockedProvider={lockedProvider}
+            lockedContinuationGroupKey={lockedContinuationGroupKey}
+            instanceEntries={providerInstanceEntries}
+            keybindings={keybindings}
+            modelOptionsByInstance={modelOptionsByInstance}
+            size="sm"
+            triggerClassName="max-w-60"
+            terminalOpen={terminalOpen}
+            getModelDisabledReason={getModelDisabledReason}
+            onInstanceModelChange={onProviderModelSelect}
+            onOpenProviderSetup={onOpenProviderSetup}
+          />
+        }
+        value={props.orchestration}
+        onChange={props.onOrchestrationChange}
+        providers={providerStatuses}
+        selection={{ instanceId: selectedInstanceId, model: selectedModel }}
+        settings={settings}
+        disabled={
+          isSendBusy ||
+          isConnecting ||
+          phase === "running" ||
+          props.orchestrationSaving ||
+          pendingApprovals.length > 0 ||
+          pendingUserInputs.length > 0
+        }
+        size={composerControlsInStrip ? "xs" : "sm"}
       />
-
+      <ThreadUsageLimits
+        environmentId={environmentId}
+        selection={{ instanceId: selectedInstanceId, model: selectedModel }}
+        orchestration={props.orchestration}
+        settings={settings}
+        providers={providerStatuses}
+        size={composerControlsInStrip ? "xs" : "sm"}
+      />
       {composerControlsCompact ? (
         <CompactComposerControlsMenu
           interactionMode={interactionMode}

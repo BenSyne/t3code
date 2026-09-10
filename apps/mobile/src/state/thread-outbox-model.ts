@@ -1,3 +1,4 @@
+import { providerAccountChain } from "@t3tools/shared/serverSettings";
 import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
 import {
   clampFileAttachmentUploadBytes,
@@ -14,11 +15,13 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
   ThreadId,
+  ThreadOrchestration,
   type ModelSelection as ModelSelectionType,
   type ProjectId as ProjectIdType,
   type ProviderInteractionMode as ProviderInteractionModeType,
   type RuntimeMode as RuntimeModeType,
   type ServerProvider,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
@@ -52,6 +55,7 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   text: Schema.String,
   attachments: Schema.Array(DraftComposerAttachmentSchema),
   modelSelection: Schema.optional(ModelSelection),
+  orchestration: Schema.optional(ThreadOrchestration),
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
   // Present when the queued item creates a brand-new thread (pending task)
@@ -81,6 +85,7 @@ export interface QueuedThreadMessage {
   readonly text: string;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly modelSelection?: ModelSelectionType;
+  readonly orchestration?: ThreadOrchestration;
   readonly runtimeMode?: RuntimeModeType;
   readonly interactionMode?: ProviderInteractionModeType;
   readonly creation?: QueuedThreadCreation;
@@ -97,8 +102,18 @@ export function resolveQueuedThreadSettings(
   message: QueuedThreadMessage,
   thread: ThreadSettingsSnapshot,
   providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "showInteractionModeToggle">> = [],
+  accountSettings?: Pick<ServerSettings, "providerAccountFallbacks">,
 ): ThreadSettingsSnapshot {
-  const modelSelection = message.modelSelection ?? thread.modelSelection;
+  let modelSelection = message.modelSelection ?? thread.modelSelection;
+  // Messages queued before a quota handoff follow the thread's substitute.
+  if (accountSettings && modelSelection.model === thread.modelSelection.model) {
+    const chain = providerAccountChain(accountSettings, modelSelection.instanceId);
+    if (
+      chain.indexOf(thread.modelSelection.instanceId) > chain.indexOf(modelSelection.instanceId)
+    ) {
+      modelSelection = { ...modelSelection, instanceId: thread.modelSelection.instanceId };
+    }
+  }
   const provider = providers.find(
     (candidate) => candidate.instanceId === modelSelection.instanceId,
   );

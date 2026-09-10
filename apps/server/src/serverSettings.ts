@@ -52,6 +52,7 @@ import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJso
 import {
   applyServerSettingsPatch,
   isModelSelectionProviderEnabled,
+  validateProviderAccountFallbacks,
 } from "@t3tools/shared/serverSettings";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 
@@ -841,10 +842,16 @@ const make = Effect.gen(function* () {
       writeSemaphore.withPermits(1)(
         Effect.gen(function* () {
           const current = yield* getSettingsFromCache;
-          const nextPersisted = yield* persistProviderEnvironmentSecrets(
-            current,
-            applyServerSettingsPatch(current, patch),
-          );
+          const patched = applyServerSettingsPatch(current, patch);
+          const fallbackError = validateProviderAccountFallbacks(patched);
+          if (fallbackError) {
+            return yield* new ServerSettingsError({
+              settingsPath,
+              operation: "normalize",
+              cause: new Error(fallbackError),
+            });
+          }
+          const nextPersisted = yield* persistProviderEnvironmentSecrets(current, patched);
           const next = yield* normalizeServerSettings(nextPersisted);
           yield* writeSettingsAtomically(next);
           yield* Cache.set(settingsCache, cacheKey, next);

@@ -224,6 +224,27 @@ const makeTestRunner = (registry: ProviderRegistryShape) =>
   );
 
 describe("providerMaintenanceRunner", () => {
+  it.effect(
+    "does not execute an automatic update when its idle check fails at the installation lock",
+    () =>
+      Effect.gen(function* () {
+        const { registry } = yield* makeRegistry(baseCursorProvider);
+        const updater = yield* makeTestRunner(registry);
+        const result = yield* updater.updateProvider(CURSOR_DRIVER, Effect.succeed(false));
+        assert.equal(result.providers[0]?.updateState?.status, "idle");
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            NonWindowsPlatform,
+            latestVersionHttpClient("0.0.0"),
+            mockSpawnerLayer(() => {
+              throw new Error("An idle check must prevent the installer from running");
+            }),
+          ),
+        ),
+      ),
+  );
+
   it.effect("runs the allowlisted provider update command and records success", () => {
     const calls: Array<{ command: string; args: ReadonlyArray<string> }> = [];
     return Effect.gen(function* () {

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ProviderInstanceId, type ModelSelection, type ServerConfig } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderInstanceId,
+  ProjectId,
+  type ModelSelection,
+  type ServerConfig,
+} from "@t3tools/contracts";
 
 import {
   buildModelOptions,
@@ -52,6 +58,30 @@ describe("mobile model options", () => {
         ],
       },
     ]);
+    const orchestratorConfig = {
+      ...config,
+      settings: {
+        ...DEFAULT_SERVER_SETTINGS,
+        orchestratorModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6-sol",
+        },
+      },
+    };
+    expect(buildModelOptions(orchestratorConfig, null).map((option) => option.subtitle)).toEqual([
+      "",
+      "",
+    ]);
+    const projectId = ProjectId.make("restricted");
+    const restricted = {
+      ...orchestratorConfig,
+      settings: { ...orchestratorConfig.settings, projectProviderAccounts: { [projectId]: [] } },
+    };
+    expect(buildModelOptions(restricted, null, projectId)).toHaveLength(2);
+    const selection = orchestratorConfig.settings.orchestratorModelSelection;
+    expect(buildModelOptions(restricted, selection, projectId)[0]?.isUnavailable).not.toBe(true);
+    expect(isModelSelectionUnavailable(restricted, selection, projectId)).toBe(false);
+    expect(buildModelOptions(restricted, null)).toHaveLength(2);
   });
 
   it("distinguishes same-name OpenCode models without changing their routing", () => {

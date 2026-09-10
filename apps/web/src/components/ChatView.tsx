@@ -23,6 +23,8 @@ import {
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
+  type ThreadOrchestration,
+  DEFAULT_THREAD_ORCHESTRATION,
   type ProjectScript,
   type ProjectId,
   type ProviderApprovalDecision,
@@ -1799,6 +1801,39 @@ export default function ChatView(props: ChatViewProps) {
   // depend on which route is mounted.
   const isServerThread = activeServerThread !== null;
   const activeThread = activeServerThread ?? localDraftThread;
+  const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
+  const draftOrchestration = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.orchestration,
+  );
+  const orchestration =
+    (isLocalDraftThread ? draftOrchestration : activeThread?.orchestration) ??
+    DEFAULT_THREAD_ORCHESTRATION;
+  const [orchestrationSaving, setOrchestrationSaving] = useState(false);
+  const changeOrchestration = async (value: ThreadOrchestration) => {
+    if (orchestrationSaving) return;
+    if (isLocalDraftThread) {
+      useComposerDraftStore.getState().setOrchestration(composerDraftTarget, value);
+      return;
+    }
+    if (!activeThread) return;
+    setOrchestrationSaving(true);
+    try {
+      const result = await updateThreadMetadata({
+        environmentId,
+        input: { threadId: activeThread.id, orchestration: value },
+      });
+      if (result._tag === "Failure") {
+        toastManager.add({
+          type: "error",
+          title: "Working accounts not saved",
+          description: "Wait for the current turn to finish, then try again.",
+        });
+      }
+    } finally {
+      setOrchestrationSaving(false);
+    }
+  };
+
   const threadError = isServerThread
     ? (localServerError ?? activeServerThread?.session?.lastError ?? null)
     : localDraftError;
@@ -1821,7 +1856,6 @@ export default function ChatView(props: ChatViewProps) {
   // the branch mismatch banner.
   const [, setThreadErrorBannerDismissTick] = useState(0);
   const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
-  const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
   const canCheckoutPullRequestIntoThread = isLocalDraftThread;
   const activeThreadId = activeThread?.id ?? null;
   const activeThreadEnvironmentId = activeThread?.environmentId ?? null;
@@ -6395,6 +6429,7 @@ export default function ChatView(props: ChatViewProps) {
     },
   ) => {
     e?.preventDefault();
+    if (orchestrationSaving) return;
     // Typed out in full rather than picked from the menu. Attachments or contexts
     // mean the user is sending a prompt, so those go through as usual.
     if (
@@ -6488,6 +6523,9 @@ export default function ChatView(props: ChatViewProps) {
       interactionMode: sendInteractionMode,
       interactionModeEnabled: sendInteractionModeEnabled,
     } = sendCtx;
+    const submittedModelDraft = useComposerDraftStore
+      .getState()
+      .getComposerDraft(composerDraftTarget);
     const annotationImageAlreadyAttached =
       directAnnotation?.image !== undefined &&
       sendContextImages.some((image) => image.id === directAnnotation.image?.id);
@@ -6979,6 +7017,7 @@ export default function ChatView(props: ChatViewProps) {
                       projectId: activeProject.id,
                       title,
                       modelSelection: threadCreateModelSelection,
+                      orchestration,
                       runtimeMode,
                       interactionMode: sendInteractionMode,
                       branch: activeThreadBranch,
@@ -7032,6 +7071,10 @@ export default function ChatView(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        // Once accepted, follow the server's account, including usage-limit substitutes.
+        useComposerDraftStore
+          .getState()
+          .consumeModelSelection(composerDraftTarget, submittedModelDraft);
         // The turn is under way and will spend quota, so that thread's limits
         // snapshot is stale. Uploads may have outlasted a navigation, so only
         // the sending thread's panel clears.
@@ -8362,11 +8405,13 @@ export default function ChatView(props: ChatViewProps) {
                             isConnecting={isConnecting}
                             isSendBusy={isSendBusy}
                             sendDisabledReason={
-                              feedbackUploading
-                                ? "Sending feedback"
-                                : threadDetailLoading
-                                  ? "Messages loading"
-                                  : null
+                              orchestrationSaving
+                                ? "Saving working accounts"
+                                : feedbackUploading
+                                  ? "Sending feedback"
+                                  : threadDetailLoading
+                                    ? "Messages loading"
+                                    : null
                             }
                             isPreparingWorktree={isPreparingWorktree}
                             bannerItems={composerBannerItems}
@@ -8399,6 +8444,9 @@ export default function ChatView(props: ChatViewProps) {
                             lockedProvider={lockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
                             providerCatalogKnown={serverConfig !== null}
+                            orchestration={orchestration}
+                            orchestrationSaving={orchestrationSaving}
+                            onOrchestrationChange={(value) => void changeOrchestration(value)}
                             activeProjectDefaultModelSelection={activeProjectDefaultModelSelection}
                             activeThreadModelSelection={activeThread?.modelSelection}
                             activeContextWindow={activeContextWindow}

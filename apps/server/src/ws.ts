@@ -104,6 +104,7 @@ import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
+import { makeProviderAutoUpdater } from "./provider/providerAutoUpdate.ts";
 import { ProviderAuthService } from "./provider/Services/ProviderAuthService.ts";
 import { ProviderInstanceRegistry } from "./provider/Services/ProviderInstanceRegistry.ts";
 import { makeProviderInstallation } from "./provider/providerInstallation.ts";
@@ -1102,6 +1103,9 @@ const makeWsRpcLayer = (
                 projectId: bootstrap.createThread.projectId,
                 title: bootstrap.createThread.title,
                 modelSelection: bootstrap.createThread.modelSelection,
+                ...(bootstrap.createThread.orchestration
+                  ? { orchestration: bootstrap.createThread.orchestration }
+                  : {}),
                 runtimeMode: bootstrap.createThread.runtimeMode,
                 interactionMode: bootstrap.createThread.interactionMode,
                 branch: bootstrap.createThread.branch,
@@ -2904,10 +2908,25 @@ const makeWsRpcLayer = (
 
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
+    // Share update locks and background work across every connected client.
+    const maintenanceRunner = yield* ProviderMaintenanceRunner.make();
+    const autoUpdate = yield* makeProviderAutoUpdater().pipe(
+      Effect.provideService(ProviderMaintenanceRunner.ProviderMaintenanceRunner, maintenanceRunner),
+    );
+    const updateSettings = yield* ServerSettings.ServerSettingsService;
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const baseServerSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const config = yield* ServerConfig.ServerConfig;
     const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
+    yield* startup.awaitCommandReady.pipe(
+      Effect.andThen(autoUpdate()),
+      Effect.andThen(
+        Stream.merge(Stream.tick("15 minutes"), updateSettings.streamChanges).pipe(
+          Stream.runForEach(() => autoUpdate()),
+        ),
+      ),
+      Effect.forkScoped,
+    );
     const serverSelfUpdate = yield* ServerSelfUpdate.withRunningThreadContinuation({
       mode: config.mode,
       selfUpdate: baseServerSelfUpdate,
@@ -2967,7 +2986,12 @@ export const websocketRpcRouteLayer = Layer.unwrap(
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(AgentSessionScanner.layer),
-              Layer.provide(ProviderMaintenanceRunner.layer),
+              Layer.provide(
+                Layer.succeed(
+                  ProviderMaintenanceRunner.ProviderMaintenanceRunner,
+                  maintenanceRunner,
+                ),
+              ),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               // One server-lifetime service means clients share the same PR caches, and a WS
               // mutation invalidates the HTTP diff cache that every client reads from.

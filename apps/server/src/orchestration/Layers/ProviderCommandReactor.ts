@@ -2,6 +2,7 @@ import {
   type ChatAttachment,
   CommandId,
   EventId,
+  MessageId,
   type ModelSelection,
   type OrchestrationEvent,
   ProviderDriverKind,
@@ -13,6 +14,11 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
+import {
+  getSubscriptionFallbackIssue,
+  providerAccountChain,
+  threadAccountFallbacks,
+} from "@t3tools/shared/serverSettings";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -59,6 +65,12 @@ const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderAdapterValidationError = Schema.is(ProviderAdapterValidationError);
 const isProviderWorkspaceMissingError = Schema.is(ProviderWorkspaceMissingError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
+const isUsageLimitPayload = Schema.is(
+  Schema.Struct({
+    usageLimitReached: Schema.Literal(true),
+    providerInstanceId: Schema.String,
+  }),
+);
 
 type ProviderIntentEvent = Extract<
   OrchestrationEvent,
@@ -71,6 +83,7 @@ type ProviderIntentEvent = Extract<
       | "thread.approval-response-requested"
       | "thread.user-input-response-requested"
       | "thread.session-stop-requested"
+      | "thread.activity-appended"
       | "thread.settled";
   }
 >;
@@ -347,6 +360,8 @@ const make = Effect.gen(function* () {
   const threadModelSelections = new Map<string, ModelSelection>();
   const compactingThreadIds = new Set<ThreadId>();
   const stoppingThreadIds = new Set<ThreadId>();
+  const fallbackVersions = new Map<ThreadId, number>();
+  const handledFallbacks = new Set<string>();
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -580,6 +595,7 @@ const make = Effect.gen(function* () {
     options?: {
       readonly modelSelection?: ModelSelection;
       readonly pendingTurnStart?: boolean;
+      readonly refreshOrchestration?: boolean;
     },
   ) {
     const thread = yield* resolveThreadShell(threadId);
@@ -785,6 +801,7 @@ const make = Effect.gen(function* () {
         !Equal.equals(previousModelSelection, requestedModelSelection);
 
       if (
+        !options?.refreshOrchestration &&
         !runtimeModeChanged &&
         !cwdChanged &&
         !instanceChanged &&
@@ -1695,6 +1712,191 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const processAccountExhausted = Effect.fn("processAccountExhausted")(function* (
+    event: Extract<ProviderIntentEvent, { type: "thread.activity-appended" }>,
+  ) {
+    const { threadId, activity } = event.payload;
+    const thread = yield* resolveThreadShell(threadId);
+    if (
+      !thread?.session ||
+      thread.session.status === "stopped" ||
+      !isUsageLimitPayload(activity.payload) ||
+      activity.payload.providerInstanceId !== thread.session.providerInstanceId ||
+      (activity.turnId !== null && thread.latestTurn?.turnId !== activity.turnId)
+    )
+      return;
+    const key = `${threadId}:${activity.turnId}:${thread.session.providerInstanceId}`;
+    if (handledFallbacks.has(key)) return;
+    handledFallbacks.add(key);
+    if (handledFallbacks.size > 2000)
+      handledFallbacks.delete(handledFallbacks.values().next().value!);
+    const settings = yield* serverSettingsService.getSettings;
+    const chain = providerAccountChain(settings, thread.modelSelection.instanceId);
+    const remaining = threadAccountFallbacks(
+      settings,
+      thread.orchestration,
+      thread.modelSelection.instanceId,
+    );
+    if (chain.length < 2) return;
+    const version = fallbackVersions.get(threadId) ?? 0;
+    const cancelled = () => (fallbackVersions.get(threadId) ?? 0) !== version;
+    const report = (summary: string, detail: string, tone: "info" | "error" = "info") =>
+      Effect.gen(function* () {
+        const createdAt = DateTime.formatIso(yield* DateTime.now);
+        yield* orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId: yield* serverCommandId("account-fallback"),
+          threadId,
+          createdAt,
+          activity: {
+            id: yield* serverEventId(),
+            kind: "provider.account.fallback",
+            summary,
+            payload: { detail },
+            tone,
+            turnId: activity.turnId,
+            createdAt,
+          },
+        });
+      });
+    const active = (yield* providerService.listSessions()).find(
+      (session) => session.threadId === threadId,
+    );
+    if (!active?.resumeCursor) {
+      yield* report(
+        "Account limit reached",
+        "Automatic continuation needs a saved provider conversation. No substitute was started.",
+        "error",
+      );
+      return;
+    }
+    const currentInfo = yield* providerService.getInstanceInfo(thread.modelSelection.instanceId);
+    let providers = yield* providerRegistry.getProviders;
+    const limitedAccount = providers.find(
+      (provider) => provider.instanceId === thread.modelSelection.instanceId,
+    );
+    for (const instanceId of remaining) {
+      if (cancelled()) return;
+      // Recheck a substitute before switching: a login may have changed since
+      // the last background check or outside T3 entirely.
+      providers = yield* providerRegistry.refreshInstance(instanceId);
+      if (cancelled()) return;
+      const candidate = providers.find((provider) => provider.instanceId === instanceId);
+      if (
+        !candidate?.enabled ||
+        !candidate.installed ||
+        candidate.availability === "unavailable" ||
+        candidate.auth.status !== "authenticated" ||
+        !candidate.models.some((model) => model.slug === thread.modelSelection.model)
+      ) {
+        yield* report(
+          "Substitute account skipped",
+          `${candidate?.displayName ?? instanceId} is unavailable or does not offer ${thread.modelSelection.model}.`,
+        );
+        continue;
+      }
+      const identityIssue = !limitedAccount?.auth.email?.trim()
+        ? {
+            message:
+              "The limited account's identity could not be verified. Refresh or sign in before using automatic continuation.",
+          }
+        : getSubscriptionFallbackIssue(
+            settings,
+            providers.map((provider) =>
+              provider.instanceId === limitedAccount.instanceId ? limitedAccount : provider,
+            ),
+            instanceId,
+          );
+      if (identityIssue) {
+        yield* report(
+          "Substitute account skipped",
+          `${candidate.displayName ?? instanceId}: ${identityIssue.message}`,
+        );
+        continue;
+      }
+      const info = yield* providerService.getInstanceInfo(instanceId);
+      if (
+        info.driverKind !== currentInfo.driverKind ||
+        info.continuationIdentity.continuationKey !==
+          currentInfo.continuationIdentity.continuationKey
+      ) {
+        yield* report(
+          "Substitute account skipped",
+          `${candidate.displayName ?? instanceId} does not share this conversation's storage.`,
+        );
+        continue;
+      }
+      const modelSelection = { ...thread.modelSelection, instanceId };
+      const createdAt = DateTime.formatIso(yield* DateTime.now);
+      // The normal restart path transfers the native resume cursor and closes
+      // the previous process, including Claude's parked rate-limited turn.
+      const resumed = yield* ensureSessionForThread(threadId, createdAt, { modelSelection }).pipe(
+        Effect.matchEffect({
+          onSuccess: () => Effect.succeed(true),
+          onFailure: () =>
+            report(
+              "Could not resume with substitute account",
+              `${candidate.displayName ?? instanceId} could not resume the saved conversation. Check this account before continuing.`,
+              "error",
+            ).pipe(Effect.as(false)),
+        }),
+      );
+      if (!resumed) return;
+      if (cancelled()) {
+        yield* providerService.stopSession({ threadId });
+        return;
+      }
+      threadModelSelections.set(threadId, modelSelection);
+      yield* orchestrationEngine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make(`account-fallback:${event.eventId}:selection`),
+        threadId,
+        modelSelection,
+      });
+      if (cancelled()) {
+        yield* providerService.stopSession({ threadId });
+        return;
+      }
+      yield* report(
+        "Continuing with substitute account",
+        `${candidate.displayName ?? instanceId} · ${modelSelection.model}. The saved provider conversation is retained.`,
+      );
+      if (cancelled()) {
+        yield* providerService.stopSession({ threadId });
+        return;
+      }
+      yield* orchestrationEngine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make(`account-fallback:${event.eventId}`),
+        threadId,
+        modelSelection,
+        runtimeMode: thread.runtimeMode,
+        interactionMode: thread.interactionMode,
+        message: {
+          messageId: MessageId.make(`account-fallback:${event.eventId}`),
+          role: "user",
+          text: "The previous account reached its usage limit. Continue the existing task from the saved conversation. Check completed actions before proceeding; do not repeat work already completed.",
+          attachments: [],
+        },
+        createdAt,
+      });
+      return;
+    }
+    if (cancelled()) return;
+    yield* providerService.stopSession({ threadId });
+    const stoppedAt = DateTime.formatIso(yield* DateTime.now);
+    yield* setThreadSession({
+      threadId,
+      session: { ...thread.session, status: "stopped", activeTurnId: null, updatedAt: stoppedAt },
+      createdAt: stoppedAt,
+    });
+    yield* report(
+      "All substitute accounts exhausted or unavailable",
+      "The conversation is saved. Sign in to an available account or wait for usage to reset, then continue.",
+      "error",
+    );
+  });
+
   const processDomainEvent = Effect.fn("processDomainEvent")(function* (
     event: ProviderIntentEvent,
   ) {
@@ -1707,9 +1909,21 @@ const make = Effect.gen(function* () {
       eventType: event.type,
     });
     switch (event.type) {
-      case "thread.meta-updated":
-        yield* threadTitleRegenerationWorker.enqueue(event);
+      case "thread.activity-appended":
+        yield* processAccountExhausted(event);
         return;
+      case "thread.meta-updated": {
+        if (event.payload.regenerateTitle) yield* threadTitleRegenerationWorker.enqueue(event);
+        if (event.payload.orchestrationModeChanged) {
+          const thread = yield* resolveThreadShell(event.payload.threadId);
+          if (thread?.session && thread.session.status !== "stopped") {
+            yield* ensureSessionForThread(event.payload.threadId, event.occurredAt, {
+              refreshOrchestration: true,
+            });
+          }
+        }
+        return;
+      }
       case "thread.runtime-mode-set": {
         const thread = yield* resolveThreadShell(event.payload.threadId);
         if (!thread?.session || thread.session.status === "stopped") {
@@ -1788,7 +2002,25 @@ const make = Effect.gen(function* () {
     );
     const processEvent = Effect.fn("processEvent")(function* (event: OrchestrationEvent) {
       if (
-        (event.type === "thread.meta-updated" && event.payload.regenerateTitle === true) ||
+        event.type === "thread.turn-interrupt-requested" ||
+        event.type === "thread.session-stop-requested" ||
+        event.type === "thread.settled" ||
+        event.type === "thread.turn-start-requested" ||
+        (event.type === "thread.meta-updated" &&
+          (event.payload.modelSelection !== undefined ||
+            event.payload.orchestration !== undefined) &&
+          !event.commandId?.startsWith("account-fallback:"))
+      ) {
+        fallbackVersions.set(
+          event.payload.threadId,
+          (fallbackVersions.get(event.payload.threadId) ?? 0) + 1,
+        );
+      }
+      if (
+        (event.type === "thread.activity-appended" &&
+          isUsageLimitPayload(event.payload.activity.payload)) ||
+        (event.type === "thread.meta-updated" &&
+          (event.payload.regenerateTitle === true || event.payload.orchestration !== undefined)) ||
         event.type === "thread.runtime-mode-set" ||
         event.type === "thread.turn-start-requested" ||
         event.type === "thread.turn-interrupt-requested" ||

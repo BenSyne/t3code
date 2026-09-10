@@ -13,6 +13,17 @@ import { createModelSelection } from "./model.ts";
 import { resolveProjectScripts, projectScriptsInheritDefaults } from "./projectScripts.ts";
 import {
   applyServerSettingsPatch,
+  providerAccountChain,
+  getSubscriptionFallbackIssue,
+  isOrchestratorSelection,
+  isThreadWorkerAccountAllowed,
+  isThreadWorkerModelAllowed,
+  resolveThreadWorkerModels,
+  threadAccountFallbacks,
+  isProjectProviderAccountAllowed,
+  validateProviderAccountFallbacks,
+  createSubscriptionAccountPatch,
+  removeSubscriptionAccountReferences,
   isModelSelectionProviderEnabled,
   parsePersistedServerObservabilitySettings,
   resolveSourceControlWriterModelSelection,
@@ -21,6 +32,343 @@ import {
 } from "./serverSettings.ts";
 
 describe("serverSettings helpers", () => {
+  it("enforces exact worker model choices and preserves legacy account selections", () => {
+    const main = ProviderInstanceId.make("codex");
+    const backup = ProviderInstanceId.make("codex_backup");
+    const settings = { providerAccountFallbacks: { [main]: [backup] } };
+    const selection = { instanceId: main, model: "astra-test" };
+    const legacy = { mode: "delegated" as const, workerAccountIds: [main] };
+    const selected = { ...legacy, workerModels: [selection] };
+    expect(isThreadWorkerModelAllowed(legacy, selection, settings)).toBe(true);
+    expect(isThreadWorkerModelAllowed(selected, selection, settings)).toBe(true);
+    expect(isThreadWorkerModelAllowed(selected, { ...selection, model: "other" }, settings)).toBe(
+      false,
+    );
+    expect(isThreadWorkerModelAllowed({ ...selected, workerModels: [] }, selection, settings)).toBe(
+      false,
+    );
+    expect(
+      isThreadWorkerModelAllowed({ ...selected, workerAccountIds: [] }, selection, settings),
+    ).toBe(false);
+    expect(
+      isThreadWorkerModelAllowed({ ...selected, mode: "same-account" }, selection, settings),
+    ).toBe(false);
+    expect(
+      isThreadWorkerModelAllowed(selected, { ...selection, instanceId: backup }, settings),
+    ).toBe(false);
+    expect(
+      isThreadWorkerModelAllowed(selected, { ...selection, instanceId: backup }, settings, true),
+    ).toBe(true);
+    expect(
+      isThreadWorkerModelAllowed(
+        { ...selected, fallbackAccountIds: [] },
+        { ...selection, instanceId: backup },
+        settings,
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      isThreadWorkerModelAllowed(selected, { instanceId: backup, model: "other" }, settings, true),
+    ).toBe(false);
+  });
+
+  it("narrows the backup order per thread and never adds unrelated accounts", () => {
+    const main = ProviderInstanceId.make("codex");
+    const first = ProviderInstanceId.make("codex_first");
+    const last = ProviderInstanceId.make("codex_last");
+    const unrelated = ProviderInstanceId.make("claudeAgent");
+    const settings = { providerAccountFallbacks: { [main]: [first, last] } };
+    const orchestration = { mode: "same-account" as const, workerAccountIds: [] };
+    expect(threadAccountFallbacks(settings, orchestration, main)).toEqual([first, last]);
+    expect(
+      threadAccountFallbacks(
+        settings,
+        { ...orchestration, fallbackAccountIds: [last, unrelated] },
+        main,
+      ),
+    ).toEqual([last]);
+    expect(
+      threadAccountFallbacks(settings, { ...orchestration, fallbackAccountIds: [] }, main),
+    ).toEqual([]);
+    expect(threadAccountFallbacks(settings, undefined, first)).toEqual([last]);
+    expect(threadAccountFallbacks(settings, orchestration, last)).toEqual([]);
+  });
+
+  it("expands legacy models without broadening an explicit selection", () => {
+    const main = ProviderInstanceId.make("codex");
+    const backup = ProviderInstanceId.make("codex_backup");
+    const model = { slug: "astra-test", name: "Astra", isCustom: false, capabilities: null };
+    const providers = [
+      { instanceId: main, models: [model] },
+      { instanceId: backup, models: [model] },
+    ];
+    const legacy = { mode: "delegated" as const, workerAccountIds: [main] };
+    expect(resolveThreadWorkerModels(legacy, providers)).toEqual([
+      { instanceId: main, model: model.slug },
+    ]);
+    expect(resolveThreadWorkerModels({ ...legacy, workerModels: [] }, providers)).toEqual([]);
+    const saved = [{ instanceId: backup, model: "no-longer-available" }];
+    expect(resolveThreadWorkerModels({ ...legacy, workerModels: saved }, providers)).toEqual(saved);
+  });
+  describe("subscription identity guard", () => {
+    const main = ProviderInstanceId.make("claudeAgent");
+    const first = ProviderInstanceId.make("claude_backup");
+    const second = ProviderInstanceId.make("claude_last");
+    const settings = { providerAccountFallbacks: { [main]: [first, second] } };
+    const account = (instanceId: ProviderInstanceId, email?: string, organizationId?: string) => ({
+      instanceId,
+      driver: ProviderDriverKind.make("claudeAgent"),
+      displayName: instanceId,
+      auth: {
+        status: "authenticated" as const,
+        ...(email ? { email } : {}),
+        ...(organizationId ? { organizationId } : {}),
+      },
+    });
+    it("blocks duplicate emails regardless of capitalization, whitespace, and display names", () => {
+      const providers = [
+        account(main, "Person@example.com"),
+        account(first, " person@EXAMPLE.com "),
+      ];
+      expect(getSubscriptionFallbackIssue(settings, providers, first)?.kind).toBe("duplicate");
+      expect(getSubscriptionFallbackIssue(settings, providers, main)).toBeNull();
+    });
+    it("compares every earlier substitute, not only the main account", () => {
+      const providers = [
+        account(main, "main@example.com"),
+        account(first, "backup@example.com"),
+        account(second, "backup@example.com"),
+      ];
+      expect(getSubscriptionFallbackIssue(settings, providers, second)?.kind).toBe("duplicate");
+    });
+    it("allows distinct verified subscriptions, including separate known workspaces", () => {
+      expect(
+        getSubscriptionFallbackIssue(
+          settings,
+          [
+            account(main, "same@example.com", "work"),
+            account(first, "same@example.com", "personal"),
+          ],
+          first,
+        ),
+      ).toBeNull();
+      expect(
+        getSubscriptionFallbackIssue(
+          settings,
+          [account(main, "one@example.com"), account(first, "two@example.com")],
+          first,
+        ),
+      ).toBeNull();
+    });
+    it("does not use plan labels or token presence as proof of a separate identity", () => {
+      expect(
+        getSubscriptionFallbackIssue(
+          settings,
+          [account(main, "main@example.com"), account(first)],
+          first,
+        )?.kind,
+      ).toBe("unverified");
+      expect(
+        getSubscriptionFallbackIssue(
+          settings,
+          [account(main), account(first, "backup@example.com")],
+          first,
+        )?.kind,
+      ).toBe("unverified");
+      expect(
+        getSubscriptionFallbackIssue(settings, [account(first, "backup@example.com")], first)?.kind,
+      ).toBe("unverified");
+    });
+    it("clears the duplicate warning after reconnecting to another account", () => {
+      const providers = [account(main, "same@example.com"), account(first, "same@example.com")];
+      expect(getSubscriptionFallbackIssue(settings, providers, first)?.kind).toBe("duplicate");
+      providers[1] = account(first, "different@example.com");
+      expect(getSubscriptionFallbackIssue(settings, providers, first)).toBeNull();
+    });
+    it("skips an unverified substitute without blocking a later distinct account", () => {
+      const providers = [
+        account(main, "main@example.com"),
+        account(first),
+        account(second, "different@example.com"),
+      ];
+      expect(getSubscriptionFallbackIssue(settings, providers, first)?.kind).toBe("unverified");
+      expect(getSubscriptionFallbackIssue(settings, providers, second)).toBeNull();
+    });
+    it("does not flag signed-out accounts or separate providers as duplicate subscriptions", () => {
+      expect(
+        getSubscriptionFallbackIssue(
+          settings,
+          [
+            account(main, "same@example.com"),
+            { ...account(first), auth: { status: "unauthenticated" } },
+          ],
+          first,
+        ),
+      ).toBeNull();
+      expect(
+        getSubscriptionFallbackIssue(
+          settings,
+          [
+            account(main, "same@example.com"),
+            { ...account(first, "same@example.com"), driver: ProviderDriverKind.make("codex") },
+          ],
+          first,
+        ),
+      ).toBeNull();
+    });
+    it("also protects Codex and treats missing workspace information conservatively", () => {
+      const providers = [
+        account(main, "same@example.com", "work"),
+        account(first, "same@example.com"),
+      ].map((provider) => ({ ...provider, driver: ProviderDriverKind.make("codex") }));
+      expect(getSubscriptionFallbackIssue(settings, providers, first)?.kind).toBe("duplicate");
+    });
+  });
+  it("limits assignments to this thread and permits substitutes only for continued workers", () => {
+    const main = ProviderInstanceId.make("codex");
+    const backup = ProviderInstanceId.make("codex_backup");
+    const claude = ProviderInstanceId.make("claudeAgent");
+    const settings = { providerAccountFallbacks: { [main]: [backup] } };
+    const delegated = { mode: "delegated" as const, workerAccountIds: [main] };
+    expect(isThreadWorkerAccountAllowed(delegated, main, settings)).toBe(true);
+    expect(isThreadWorkerAccountAllowed(delegated, backup, settings)).toBe(false);
+    expect(isThreadWorkerAccountAllowed(delegated, backup, settings, true)).toBe(true);
+    expect(isThreadWorkerAccountAllowed(delegated, claude, settings, true)).toBe(false);
+    expect(
+      isThreadWorkerAccountAllowed({ ...delegated, mode: "same-account" }, main, settings, true),
+    ).toBe(false);
+    expect(isThreadWorkerAccountAllowed(undefined, main, settings, true)).toBe(false);
+    expect(
+      isThreadWorkerAccountAllowed(
+        { mode: "delegated", workerAccountIds: [backup] },
+        main,
+        settings,
+        true,
+      ),
+    ).toBe(false);
+  });
+
+  it("adds isolated accounts in order while retaining the selected orchestrator model", () => {
+    const primaryId = ProviderInstanceId.make("codex");
+    const first = ProviderInstanceId.make("codex_backup_1");
+    const second = ProviderInstanceId.make("codex_backup_2");
+    const initial = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      orchestratorModelSelection: {
+        instanceId: primaryId,
+        model: "astra-test",
+        options: [{ id: "reasoningEffort", value: "high" }],
+      },
+    });
+    const added = applyServerSettingsPatch(
+      initial,
+      createSubscriptionAccountPatch(initial, {
+        driver: "codex",
+        instanceId: first,
+        name: "Personal backup",
+        primaryId,
+      }),
+    );
+    const settings = applyServerSettingsPatch(
+      added,
+      createSubscriptionAccountPatch(added, {
+        driver: "codex",
+        instanceId: second,
+        name: "Work backup",
+        primaryId: first,
+      }),
+    );
+    expect(validateProviderAccountFallbacks(settings)).toBeNull();
+    expect(providerAccountChain(settings, second)).toEqual([primaryId, first, second]);
+    expect(settings.providerInstances[first]?.config).toMatchObject({
+      homePath: "",
+      shadowHomePath: "~/.t3/subscriptions/codex_backup_1",
+    });
+    expect(settings.providerInstances[second]?.config).toMatchObject({
+      homePath: "",
+      shadowHomePath: "~/.t3/subscriptions/codex_backup_2",
+    });
+    expect(isOrchestratorSelection(settings, { instanceId: second, model: "astra-test" })).toBe(
+      true,
+    );
+    expect(isOrchestratorSelection(settings, { instanceId: second, model: "another-model" })).toBe(
+      false,
+    );
+    const removed = applyServerSettingsPatch(
+      settings,
+      removeSubscriptionAccountReferences(settings, first),
+    );
+    expect(providerAccountChain(removed, primaryId)).toEqual([primaryId, second]);
+    const cleared = applyServerSettingsPatch(
+      removed,
+      removeSubscriptionAccountReferences(removed, primaryId),
+    );
+    expect(cleared.orchestratorModelSelection).toBeNull();
+    expect(cleared.providerAccountFallbacks).toEqual({});
+  });
+
+  it("keeps Claude logins private while sharing the main account's history", () => {
+    const primaryId = ProviderInstanceId.make("claudeAgent");
+    const instanceId = ProviderInstanceId.make("claude_backup");
+    const patch = createSubscriptionAccountPatch(DEFAULT_SERVER_SETTINGS, {
+      driver: "claudeAgent",
+      primaryId,
+      instanceId,
+      name: "Claude Backup",
+    });
+    expect(patch.providerInstances?.[instanceId]?.config).toMatchObject({
+      homePath: "~/.t3/subscriptions/claude_backup",
+      sessionHomePath: "~/.claude",
+    });
+    const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, patch);
+    expect(() =>
+      createSubscriptionAccountPatch(settings, {
+        driver: "claudeAgent",
+        primaryId,
+        instanceId: ProviderInstanceId.make("another"),
+        name: "claude backup",
+      }),
+    ).toThrow("distinct");
+    expect(
+      validateProviderAccountFallbacks({
+        ...settings,
+        providerAccountFallbacks: { [primaryId]: [instanceId, instanceId] },
+      }),
+    ).toContain("more than once");
+    expect(
+      validateProviderAccountFallbacks({
+        ...settings,
+        providerAccountFallbacks: { codex: [instanceId] },
+      }),
+    ).toContain("same provider");
+  });
+
+  it("replaces orchestrator options and fallback chains rather than deep-merging stale values", () => {
+    const instanceId = ProviderInstanceId.make("codex");
+    const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      orchestratorModelSelection: {
+        instanceId,
+        model: "a",
+        options: [{ id: "reasoningEffort", value: "high" }],
+      },
+      providerAccountFallbacks: { [instanceId]: [ProviderInstanceId.make("codex_backup")] },
+    });
+    const next = applyServerSettingsPatch(first, {
+      orchestratorModelSelection: { instanceId, model: "b" },
+      providerAccountFallbacks: {},
+    });
+    expect(next.orchestratorModelSelection).toEqual({ instanceId, model: "b" });
+    expect(next.providerAccountFallbacks).toEqual({});
+  });
+
+  it("finds an account's new chain after its old substitutes were removed", () => {
+    const oldPrimary = ProviderInstanceId.make("codex_old");
+    const primary = ProviderInstanceId.make("codex");
+    const settings = {
+      providerAccountFallbacks: { [oldPrimary]: [], [primary]: [oldPrimary] },
+    };
+    expect(providerAccountChain(settings, oldPrimary)).toEqual([primary, oldPrimary]);
+  });
+
   it("inherits actions, preserves existing actions, and supports empty overrides and reset", () => {
     const project = { id: ProjectId.make("project-actions"), scripts: [] };
     const action = {
@@ -717,4 +1065,26 @@ describe("serverSettings helpers", () => {
 
     expect(resolved.pauseWhenOnBattery).toBe(false);
   });
+});
+
+it("replaces one project's allowed accounts, preserves other projects, and resets to all", () => {
+  const project = ProjectId.make("codex-only");
+  const other = ProjectId.make("other");
+  const main = ProviderInstanceId.make("codex");
+  const backup = ProviderInstanceId.make("codex_backup");
+  const claude = ProviderInstanceId.make("claudeAgent");
+  const initial = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    projectProviderAccounts: { [project]: [main, backup], [other]: [claude] },
+  });
+  expect(isProjectProviderAccountAllowed(initial, project, main)).toBe(true);
+  expect(isProjectProviderAccountAllowed(initial, project, backup)).toBe(true);
+  expect(isProjectProviderAccountAllowed(initial, project, claude)).toBe(false);
+  expect(isProjectProviderAccountAllowed(initial, ProjectId.make("unrestricted"), claude)).toBe(
+    true,
+  );
+  const empty = applyServerSettingsPatch(initial, { projectProviderAccounts: { [project]: [] } });
+  expect(isProjectProviderAccountAllowed(empty, project, main)).toBe(false);
+  expect(empty.projectProviderAccounts[other]).toEqual([claude]);
+  const reset = applyServerSettingsPatch(empty, { projectProviderAccounts: { [project]: null } });
+  expect(isProjectProviderAccountAllowed(reset, project, claude)).toBe(true);
 });

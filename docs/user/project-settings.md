@@ -19,6 +19,11 @@ Reset that list to use shared actions again. Existing project actions are preser
 Project names, icons, removal, and importing actions from a checkout remain project-specific.
 When there are several checkouts, the checkout picker selects which actions and grouping to edit.
 
+## Choose working accounts
+
+Working accounts are selected per thread in the chat controls. See
+[subscription orchestration](./providers-codex.md#use-a-subscription-as-the-orchestrator).
+
 ## Project icons
 
 Choose an icon, emoji, or image from the project to make it easier to recognize. The choice applies

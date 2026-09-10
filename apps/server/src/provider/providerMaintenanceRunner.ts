@@ -52,6 +52,7 @@ export interface ProviderMaintenanceRunnerShape {
           readonly provider: ProviderDriverKind;
           readonly instanceId?: ProviderInstanceId | undefined;
         },
+    canRun?: Effect.Effect<boolean>,
   ) => Effect.Effect<ServerProviderUpdatedPayload, ServerProviderUpdateError>;
 }
 
@@ -304,7 +305,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
 
   const updateProvider: ProviderMaintenanceRunnerShape["updateProvider"] = Effect.fn(
     "ProviderMaintenanceRunner.updateProvider",
-  )(function* (target) {
+  )(function* (target, canRun) {
     const provider = typeof target === "string" ? target : target.provider;
     const instanceId =
       typeof target === "string"
@@ -376,6 +377,17 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               );
             }
 
+            // Automatic updates recheck after waiting for the installation lock.
+            if (canRun && !(yield* canRun)) {
+              return yield* finish(
+                makeUpdateState({
+                  status: "idle",
+                  startedAt: null,
+                  finishedAt: null,
+                  message: "Automatic update deferred until tasks are idle.",
+                }),
+              );
+            }
             const result = yield* runMaintenanceCommand(fresh.update);
             const finishedAt = yield* nowIso;
             if (result.timedOut || result.exitCode !== 0) {
