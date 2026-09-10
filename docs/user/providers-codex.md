@@ -6,9 +6,11 @@ and custom binaries or environment variables.
 
 ## Use multiple accounts
 
-In **Settings > Providers > Subscription accounts**, choose your main Codex
-account, enter a distinct name, and select **Add subscription**. Sign in to the
-new account using the displayed device code. T3 Code prepares its private login
+In **Settings > Providers > Subscription accounts**, select **Add Codex subscription**,
+enter a distinct name, and choose a main account if you have more than one.
+Sign in to the new account using the displayed device code. Enable device code
+authorization in that account's **ChatGPT > Settings > Security** first; the
+information icon beside **Sign in** explains the steps. T3 Code prepares its private login
 directory and shares conversation storage with the main account. The accounts
 and credentials belong to the connected environment, including when you connect
 remotely.

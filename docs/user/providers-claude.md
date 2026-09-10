@@ -7,8 +7,9 @@ shared provider settings.
 ## Separate accounts or configurations
 
 For subscription accounts, use **Settings > Providers > Subscription accounts**.
-Choose your main Claude account, give the new account a distinct name, and select
-**Add subscription**, then **Sign in**. Each account keeps its own login while
+Select **Add Claude subscription**, give the new account a distinct name, and
+choose a main account if you have more than one. Add the account, then select
+**Sign in**. Each account keeps its own login while
 sharing the main account's conversation storage. You can reorder substitutes or
 choose a different main account after signing in.
 
