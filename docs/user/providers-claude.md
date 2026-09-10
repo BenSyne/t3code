@@ -13,6 +13,11 @@ choose a main account if you have more than one. Add the account, then select
 sharing the main account's conversation storage. You can reorder substitutes or
 choose a different main account after signing in.
 
+Each substitute must use a separate subscription. T3 verifies the CLI login and
+compares the email and subscription workspace when available. Duplicate or
+unverified accounts are skipped during automatic continuation; reconnect a
+duplicate using **Use different account**.
+
 Select a Claude account and model in the chat, then open **Working accounts**
 to use that model for both planning and development or choose separate workers. See [subscription orchestration](./providers-codex.md#use-a-subscription-as-the-orchestrator).
 

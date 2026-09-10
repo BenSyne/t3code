@@ -155,34 +155,43 @@ describe("ProviderCommandReactor", () => {
         const backup = ProviderInstanceId.make("codex_backup");
         const last = ProviderInstanceId.make("codex_last");
         const wrongModel = ProviderInstanceId.make("codex_other_model");
+        const duplicate = ProviderInstanceId.make("codex_duplicate");
+        const unverified = ProviderInstanceId.make("codex_unverified");
         const firstSent = yield* Deferred.make<void>();
         const secondSent = yield* Deferred.make<void>();
         const stopped = yield* Deferred.make<void>();
         let sendCount = 0;
         const harness = yield* Effect.promise(() =>
           createHarness({
-            accountFallbacks: { [main]: [wrongModel, backup, last] },
+            accountFallbacks: { [main]: [duplicate, unverified, wrongModel, backup, last] },
             projectAccounts: { [ProjectId.make("project-1")]: [main, wrongModel, backup, last] },
-            providers: [backup, last, wrongModel].map((instanceId) => ({
-              instanceId,
-              driver: ProviderDriverKind.make("codex"),
-              enabled: true,
-              installed: true,
-              status: "ready",
-              version: null,
-              checkedAt: "2026-01-01T00:00:00.000Z",
-              auth: { status: "authenticated" },
-              slashCommands: [],
-              skills: [],
-              models: [
-                {
-                  slug: instanceId === wrongModel ? "another-model" : "gpt-5-codex",
-                  name: "Test model",
-                  isCustom: false,
-                  capabilities: null,
+            providers: [main, duplicate, unverified, backup, last, wrongModel].map(
+              (instanceId) => ({
+                instanceId,
+                driver: ProviderDriverKind.make("codex"),
+                enabled: true,
+                installed: true,
+                status: "ready",
+                version: null,
+                checkedAt: "2026-01-01T00:00:00.000Z",
+                auth: {
+                  status: "authenticated",
+                  ...(instanceId === unverified
+                    ? {}
+                    : { email: `${instanceId === duplicate ? main : instanceId}@example.com` }),
                 },
-              ],
-            })),
+                slashCommands: [],
+                skills: [],
+                models: [
+                  {
+                    slug: instanceId === wrongModel ? "another-model" : "gpt-5-codex",
+                    name: "Test model",
+                    isCustom: false,
+                    capabilities: null,
+                  },
+                ],
+              }),
+            ),
             sendTurnEffect: () =>
               Deferred.succeed(++sendCount === 1 ? firstSent : secondSent, undefined).pipe(
                 Effect.asVoid,
@@ -264,6 +273,16 @@ describe("ProviderCommandReactor", () => {
           ),
         ).toBe(true);
         expect(thread.messages).toHaveLength(2);
+        expect(
+          thread.activities.some((activity) =>
+            JSON.stringify(activity.payload).includes("same subscription"),
+          ),
+        ).toBe(true);
+        expect(
+          thread.activities.some((activity) =>
+            JSON.stringify(activity.payload).includes("could not verify"),
+          ),
+        ).toBe(true);
       }),
   );
 
@@ -278,21 +297,19 @@ describe("ProviderCommandReactor", () => {
       const harness = yield* Effect.promise(() =>
         createHarness({
           accountFallbacks: { [main]: [backup] },
-          providers: [
-            {
-              instanceId: backup,
-              driver: ProviderDriverKind.make("codex"),
-              enabled: true,
-              installed: true,
-              status: "ready",
-              version: null,
-              checkedAt: now,
-              auth: { status: "authenticated" },
-              slashCommands: [],
-              skills: [],
-              models: [{ slug: "gpt-5-codex", name: "Test", isCustom: false, capabilities: null }],
-            },
-          ],
+          providers: [main, backup].map((instanceId) => ({
+            instanceId,
+            driver: ProviderDriverKind.make("codex"),
+            enabled: true,
+            installed: true,
+            status: "ready",
+            version: null,
+            checkedAt: now,
+            auth: { status: "authenticated", email: `${instanceId}@example.com` },
+            slashCommands: [],
+            skills: [],
+            models: [{ slug: "gpt-5-codex", name: "Test", isCustom: false, capabilities: null }],
+          })),
           startSessionEffect: (session) =>
             Deferred.succeed(started, undefined).pipe(
               Effect.andThen(Deferred.await(release)),

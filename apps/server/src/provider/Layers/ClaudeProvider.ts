@@ -10,6 +10,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
@@ -416,6 +417,17 @@ const runClaudeCommand = Effect.fn("runClaudeCommand")(function* (
   return yield* spawnAndCollect(claudeSettings.binaryPath, command);
 });
 
+const ClaudeAuthStatus = Schema.fromJsonString(
+  Schema.Struct({
+    loggedIn: Schema.Boolean,
+    authMethod: Schema.optional(Schema.NullOr(Schema.String)),
+    email: Schema.optional(Schema.NullOr(Schema.String)),
+    orgId: Schema.optional(Schema.NullOr(Schema.String)),
+    subscriptionType: Schema.optional(Schema.NullOr(Schema.String)),
+  }),
+);
+const decodeClaudeAuthStatus = Schema.decodeUnknownEffect(ClaudeAuthStatus);
+
 export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(function* (
   claudeSettings: ClaudeSettings,
   resolveCapabilities?: (
@@ -537,7 +549,17 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const slashCommands = [COMPACT_SLASH_COMMAND, ...(capabilities?.slashCommands ?? [])];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
 
-  if (!capabilities) {
+  // SDK initialization succeeds even without credentials. Verify the CLI login
+  // separately, and never reuse a cached SDK email after the account changes.
+  const externalAuth = capabilities?.apiProvider && capabilities.apiProvider !== "firstParty";
+  const login = externalAuth
+    ? undefined
+    : yield* runClaudeCommand(claudeSettings, ["auth", "status"], resolvedEnvironment).pipe(
+        Effect.timeout(DEFAULT_TIMEOUT_MS),
+        Effect.flatMap((result) => decodeClaudeAuthStatus(result.stdout)),
+        Effect.orElseSucceed(() => undefined),
+      );
+  if (!externalAuth && login?.loggedIn !== true) {
     return buildServerProvider({
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
@@ -548,19 +570,22 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       probe: {
         installed: true,
         version: parsedVersion,
-        status: "warning",
-        auth: { status: "unknown" },
-        message: "Could not verify Claude authentication status from initialization result.",
+        status: login?.loggedIn === false ? "error" : "warning",
+        auth: { status: login?.loggedIn === false ? "unauthenticated" : "unknown" },
+        message:
+          login?.loggedIn === false
+            ? "Claude is not signed in. Connect this subscription in Settings → Providers."
+            : "Could not verify Claude authentication status. Refresh or sign in again.",
       },
     });
   }
 
   const authMetadata =
     claudeAuthMetadata({
-      subscriptionType: capabilities.subscriptionType,
-      authMethod: capabilities.tokenSource,
-    }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
-  const usageLimits = !capabilities.usage
+      subscriptionType: login?.subscriptionType ?? capabilities?.subscriptionType,
+      authMethod: login?.authMethod ?? capabilities?.tokenSource,
+    }) ?? apiProviderAuthMetadata(capabilities?.apiProvider);
+  const usageLimits = !capabilities?.usage
     ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
     : scopedLimitNames
       ? yield* recordClaudeUsageResponse(scopedLimitNames, {
@@ -581,7 +606,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       status: "ready",
       auth: {
         status: "authenticated",
-        ...(capabilities.email ? { email: capabilities.email } : {}),
+        ...(login?.email?.trim() ? { email: login.email.trim() } : {}),
+        ...(login?.orgId?.trim() ? { organizationId: login.orgId.trim() } : {}),
         ...(authMetadata ? authMetadata : {}),
       },
       ...(versionUpgradeMessage ? { message: versionUpgradeMessage } : {}),

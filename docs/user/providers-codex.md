@@ -15,6 +15,11 @@ directory and shares conversation storage with the main account. The accounts
 and credentials belong to the connected environment, including when you connect
 remotely.
 
+T3 checks the account identity, not just the plan name. A substitute signed into
+the same account is marked **Duplicate subscription** and skipped during automatic
+continuation. Select **Use different account** to reconnect it. Accounts whose
+identity cannot be verified are also skipped until verification succeeds.
+
 New accounts become substitutes for the selected main account. Reorder them,
 change the main account, or remove an account from the substitute list in the
 same section. A confirmed usage limit switches to the next available account

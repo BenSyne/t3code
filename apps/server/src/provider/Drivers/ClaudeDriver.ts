@@ -268,7 +268,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         provider: "claudeAgent",
         binaryPath: effectiveConfig.binaryPath || "claude",
         environment: yield* makeClaudeEnvironment(effectiveConfig, processEnv),
-        onChanged: snapshot.refresh,
+        onChanged: Cache.invalidate(capabilitiesProbeCache, capabilitiesCacheKey).pipe(
+          Effect.andThen(snapshot.refresh),
+        ),
       });
       return {
         instanceId,

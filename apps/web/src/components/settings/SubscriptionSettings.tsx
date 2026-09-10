@@ -10,6 +10,7 @@ import {
 } from "@t3tools/contracts";
 import {
   createSubscriptionAccountPatch,
+  getSubscriptionFallbackIssue,
   providerAccountChain,
 } from "@t3tools/shared/serverSettings";
 import {
@@ -134,6 +135,7 @@ function SubscriptionAccountRow({
   role,
   readOnly,
   menuItems,
+  fallbackIssue,
   children,
 }: {
   environmentId: EnvironmentId;
@@ -141,6 +143,7 @@ function SubscriptionAccountRow({
   role: string;
   readOnly: boolean;
   menuItems?: ReactNode;
+  fallbackIssue: ReturnType<typeof getSubscriptionFallbackIssue>;
   children?: ReactNode;
 }) {
   const target = { environmentId, input: { instanceId: provider.instanceId } };
@@ -164,11 +167,15 @@ function SubscriptionAccountRow({
       ? "Disabled"
       : !provider.installed
         ? "CLI not installed"
-        : signedIn
-          ? "Signed in"
-          : provider.auth.status === "unknown"
-            ? "Not checked"
-            : "Not signed in";
+        : fallbackIssue
+          ? fallbackIssue.kind === "duplicate"
+            ? "Duplicate subscription"
+            : "Identity not verified"
+          : signedIn
+            ? "Signed in"
+            : provider.auth.status === "unknown"
+              ? "Not checked"
+              : "Not signed in";
   const detail = !provider.enabled
     ? "Enable this account in provider settings to use it."
     : !provider.installed
@@ -214,17 +221,19 @@ function SubscriptionAccountRow({
         <div className="flex flex-wrap items-center gap-2">
           <Badge
             variant={
-              status === "Signed in"
-                ? "success"
-                : status === "Not signed in"
-                  ? "warning"
-                  : "outline"
+              fallbackIssue
+                ? "warning"
+                : status === "Signed in"
+                  ? "success"
+                  : status === "Not signed in"
+                    ? "warning"
+                    : "outline"
             }
           >
             {status === "Signed in" ? <CheckIcon /> : null}
             {status}
           </Badge>
-          {!signedIn && !active ? (
+          {(!signedIn || fallbackIssue) && !active ? (
             <div className="flex items-center gap-1">
               <Button
                 size="xs"
@@ -234,7 +243,7 @@ function SubscriptionAccountRow({
                   void run(() => start(target));
                 }}
               >
-                Sign in
+                {fallbackIssue?.kind === "duplicate" ? "Use different account" : "Sign in"}
               </Button>
               {provider.driver === "codex" ? <CodexSignInHelp /> : null}
             </div>
@@ -268,6 +277,11 @@ function SubscriptionAccountRow({
           ) : null}
         </div>
       </div>
+      {fallbackIssue && !active ? (
+        <Alert variant="warning">
+          <AlertDescription>{fallbackIssue.message}</AlertDescription>
+        </Alert>
+      ) : null}
       {active ? (
         <div className="flex flex-col gap-3">
           <p role="status" className="text-sm">
@@ -395,7 +409,11 @@ function ProviderSubscriptions({
     (id) => accounts.find((account) => account.instanceId === id) ?? [],
   );
   const connectedCount = accounts.filter(
-    (account) => account.enabled && account.installed && account.auth.status === "authenticated",
+    (account) =>
+      account.enabled &&
+      account.installed &&
+      account.auth.status === "authenticated" &&
+      !getSubscriptionFallbackIssue(settings, accounts, account.instanceId),
   ).length;
   const label = (id: ProviderInstanceId) =>
     accounts.find((account) => account.instanceId === id)?.displayName ?? id;
@@ -481,7 +499,7 @@ function ProviderSubscriptions({
       >
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-5">
           <p className="text-xs text-muted-foreground">
-            {connectedCount} of {accounts.length} accounts connected
+            {connectedCount} of {accounts.length} accounts ready
           </p>
           <span className="text-xs text-muted-foreground">
             Main account first · substitutes in order
@@ -508,6 +526,7 @@ function ProviderSubscriptions({
                 provider={account}
                 role={index > 0 ? `Substitute ${index}` : "Main account"}
                 readOnly={disabled}
+                fallbackIssue={getSubscriptionFallbackIssue(settings, accounts, account.instanceId)}
                 menuItems={
                   index > 0 ? (
                     <>

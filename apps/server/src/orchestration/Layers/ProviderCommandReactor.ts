@@ -14,7 +14,7 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
-import { providerAccountChain } from "@t3tools/shared/serverSettings";
+import { getSubscriptionFallbackIssue, providerAccountChain } from "@t3tools/shared/serverSettings";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -1763,8 +1763,15 @@ const make = Effect.gen(function* () {
       return;
     }
     const currentInfo = yield* providerService.getInstanceInfo(thread.modelSelection.instanceId);
-    const providers = yield* providerRegistry.getProviders;
+    let providers = yield* providerRegistry.getProviders;
+    const limitedAccount = providers.find(
+      (provider) => provider.instanceId === thread.modelSelection.instanceId,
+    );
     for (const instanceId of remaining) {
+      if (cancelled()) return;
+      // Recheck a substitute before switching: a login may have changed since
+      // the last background check or outside T3 entirely.
+      providers = yield* providerRegistry.refreshInstance(instanceId);
       if (cancelled()) return;
       const candidate = providers.find((provider) => provider.instanceId === instanceId);
       if (
@@ -1777,6 +1784,25 @@ const make = Effect.gen(function* () {
         yield* report(
           "Substitute account skipped",
           `${candidate?.displayName ?? instanceId} is unavailable or does not offer ${thread.modelSelection.model}.`,
+        );
+        continue;
+      }
+      const identityIssue = !limitedAccount?.auth.email?.trim()
+        ? {
+            message:
+              "The limited account's identity could not be verified. Refresh or sign in before using automatic continuation.",
+          }
+        : getSubscriptionFallbackIssue(
+            settings,
+            providers.map((provider) =>
+              provider.instanceId === limitedAccount.instanceId ? limitedAccount : provider,
+            ),
+            instanceId,
+          );
+      if (identityIssue) {
+        yield* report(
+          "Substitute account skipped",
+          `${candidate.displayName ?? instanceId}: ${identityIssue.message}`,
         );
         continue;
       }

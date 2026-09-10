@@ -50,6 +50,51 @@ export function providerAccountChain(
   return [instanceId];
 }
 
+/** A substitute must represent a verified, distinct subscription in its chain. */
+export function getSubscriptionFallbackIssue(
+  settings: Pick<ServerSettings, "providerAccountFallbacks">,
+  providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "driver" | "auth" | "displayName">>,
+  instanceId: ProviderInstanceId,
+): { kind: "duplicate" | "unverified"; message: string } | null {
+  const chain = providerAccountChain(settings, instanceId);
+  const index = chain.indexOf(instanceId);
+  if (index < 1) return null;
+  const candidate = providers.find((provider) => provider.instanceId === instanceId);
+  if (candidate?.auth.status !== "authenticated") return null;
+  const email = candidate.auth.email?.trim().toLowerCase();
+  const earlierAccounts = chain
+    .slice(0, index)
+    .flatMap((id) => providers.find((provider) => provider.instanceId === id) ?? []);
+  const duplicate = email
+    ? earlierAccounts.find(
+        (earlier) =>
+          earlier.driver === candidate.driver &&
+          earlier.auth.status === "authenticated" &&
+          earlier.auth.email?.trim().toLowerCase() === email &&
+          (!earlier.auth.organizationId ||
+            !candidate.auth.organizationId ||
+            earlier.auth.organizationId === candidate.auth.organizationId),
+      )
+    : undefined;
+  if (duplicate) {
+    return {
+      kind: "duplicate",
+      message: `This is the same subscription as ${duplicate.displayName ?? duplicate.instanceId}. It cannot provide extra usage and will be skipped during automatic continuation. Sign in with a different account.`,
+    };
+  }
+  const main = earlierAccounts.find((provider) => provider.instanceId === chain[0]);
+  // Unverified intermediate substitutes are skipped themselves; they must not
+  // prevent a later, verified account from continuing the task.
+  if (!email || !main || (main.auth.status !== "unauthenticated" && !main.auth.email?.trim())) {
+    return {
+      kind: "unverified",
+      message:
+        "T3 could not verify that this is a separate subscription. Automatic continuation will skip it until account identities are verified. Refresh the accounts or sign in again.",
+    };
+  }
+  return null;
+}
+
 export function isOrchestratorSelection(
   settings: Pick<ServerSettings, "orchestratorModelSelection" | "providerAccountFallbacks">,
   selection: ModelSelection,

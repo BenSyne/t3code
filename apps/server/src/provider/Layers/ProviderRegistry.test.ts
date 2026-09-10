@@ -2395,7 +2395,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             Layer.updateService(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
               ChildProcessSpawner.make((command) => {
                 if (command._tag !== "StandardCommand") return spawner.spawn(command);
-                spawnedCommands.push(command.command);
+                if (command.command === firstMissing || command.command === secondMissing) {
+                  spawnedCommands.push(command.command);
+                }
                 const beforeSpawn =
                   command.command === secondMissing
                     ? Deferred.succeed(secondProbeStarted, undefined).pipe(
@@ -2645,6 +2647,46 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
     // ── checkClaudeProviderStatus tests ──────────────────────────
 
     describe("checkClaudeProviderStatus", () => {
+      it.effect("does not report authentication just because the SDK initialized", () =>
+        Effect.gen(function* () {
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities({ email: "stale@example.com", subscriptionType: "maxplan" }),
+          );
+          assert.strictEqual(status.auth.status, "unauthenticated");
+          assert.strictEqual(status.auth.email, undefined);
+          assert.strictEqual(status.auth.label, undefined);
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              if (args.join(" ") === "--version") return { stdout: "2.1.0\n", stderr: "", code: 0 };
+              if (args.join(" ") === "auth status")
+                return { stdout: '{"loggedIn":false}', stderr: "", code: 1 };
+              throw new Error("Unexpected command");
+            }),
+          ),
+        ),
+      );
+      it.effect("leaves identity unknown when CLI authentication verification fails", () =>
+        Effect.gen(function* () {
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities({ email: "stale@example.com", subscriptionType: "maxplan" }),
+          );
+          assert.strictEqual(status.auth.status, "unknown");
+          assert.strictEqual(status.auth.email, undefined);
+          assert.ok(!(status.message ?? "").includes("secret-output"));
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              if (args.join(" ") === "--version") return { stdout: "2.1.0\n", stderr: "", code: 0 };
+              if (args.join(" ") === "auth status")
+                return { stdout: "secret-output", stderr: "", code: 1 };
+              throw new Error("Unexpected command");
+            }),
+          ),
+        ),
+      );
       it.effect("returns ready when claude is installed and authenticated", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
@@ -2689,6 +2731,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             mockSpawnerLayer((args) => {
               const joined = args.join(" ");
               if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              if (joined === "auth status")
+                return { stdout: JSON.stringify({ loggedIn: true }), stderr: "", code: 0 };
               throw new Error(`Unexpected args: ${joined}`);
             }),
           ),
@@ -2738,6 +2782,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             mockSpawnerLayer((args) => {
               const joined = args.join(" ");
               if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              if (joined === "auth status")
+                return { stdout: JSON.stringify({ loggedIn: true }), stderr: "", code: 0 };
               throw new Error(`Unexpected args: ${joined}`);
             }),
           ),
@@ -2760,20 +2806,23 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             mockSpawnerLayer((args) => {
               const joined = args.join(" ");
               if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              if (joined === "auth status")
+                return { stdout: JSON.stringify({ loggedIn: true }), stderr: "", code: 0 };
               throw new Error(`Unexpected args: ${joined}`);
             }),
           ),
         ),
       );
 
-      it.effect("returns claude auth email from initialization result", () =>
+      it.effect("uses the current CLI identity instead of a stale initialization email", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
             defaultClaudeSettings,
-            claudeCapabilities({ email: "claude@example.com" }),
+            claudeCapabilities({ email: "stale@example.com" }),
           );
           assert.strictEqual(status.auth.status, "authenticated");
           assert.strictEqual(status.auth.email, "claude@example.com");
+          assert.strictEqual(status.auth.organizationId, "workspace-1");
         }).pipe(
           Effect.provide(
             mockSpawnerLayer((args) => {
@@ -2782,7 +2831,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               if (joined === "auth status")
                 return {
                   stdout:
-                    '{"loggedIn":true,"authMethod":"claude.ai","account":{"email":"claude@example.com"}}\n',
+                    '{"loggedIn":true,"authMethod":"claude.ai","email":"claude@example.com","orgId":"workspace-1"}\n',
                   stderr: "",
                   code: 0,
                 };
@@ -2818,7 +2867,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           // The home is resolved through the host Path before it reaches the env.
           assert.deepStrictEqual(
             recorded.commands.map((command) => command.env?.CLAUDE_CONFIG_DIR),
-            [(yield* Path.Path).resolve(claudeConfigDir)],
+            [
+              (yield* Path.Path).resolve(claudeConfigDir),
+              (yield* Path.Path).resolve(claudeConfigDir),
+            ],
           );
         }).pipe(Effect.provide(recorded.layer));
       });
@@ -2974,19 +3026,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         );
       });
 
-      it.effect("returns warning when the Claude initialization result is unavailable", () =>
+      it.effect("reports a signed-out CLI even when capabilities are unavailable", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
             defaultClaudeSettings,
             noClaudeCapabilities,
           );
-          assert.strictEqual(status.status, "warning");
+          assert.strictEqual(status.status, "error");
           assert.strictEqual(status.installed, true);
-          assert.strictEqual(status.auth.status, "unknown");
-          assert.strictEqual(
-            status.message,
-            "Could not verify Claude authentication status from initialization result.",
-          );
+          assert.strictEqual(status.auth.status, "unauthenticated");
+          assert.match(status.message ?? "", /not signed in/);
         }).pipe(
           Effect.provide(
             mockSpawnerLayer((args) => {

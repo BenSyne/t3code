@@ -14,6 +14,7 @@ import { resolveProjectScripts, projectScriptsInheritDefaults } from "./projectS
 import {
   applyServerSettingsPatch,
   providerAccountChain,
+  getSubscriptionFallbackIssue,
   isOrchestratorSelection,
   isThreadWorkerAccountAllowed,
   isProjectProviderAccountAllowed,
@@ -28,6 +29,120 @@ import {
 } from "./serverSettings.ts";
 
 describe("serverSettings helpers", () => {
+  describe("subscription identity guard", () => {
+    const main = ProviderInstanceId.make("claudeAgent");
+    const first = ProviderInstanceId.make("claude_backup");
+    const second = ProviderInstanceId.make("claude_last");
+    const settings = { providerAccountFallbacks: { [main]: [first, second] } };
+    const account = (instanceId: ProviderInstanceId, email?: string, organizationId?: string) => ({
+      instanceId,
+      driver: ProviderDriverKind.make("claudeAgent"),
+      displayName: instanceId,
+      auth: {
+        status: "authenticated" as const,
+        ...(email ? { email } : {}),
+        ...(organizationId ? { organizationId } : {}),
+      },
+    });
+    it("blocks duplicate emails regardless of capitalization, whitespace, and display names", () => {
+      const providers = [
+        account(main, "Person@example.com"),
+        account(first, " person@EXAMPLE.com "),
+      ];
+      expect(getSubscriptionFallbackIssue(settings, providers, first)?.kind).toBe("duplicate");
+      expect(getSubscriptionFallbackIssue(settings, providers, main)).toBeNull();
+    });
+    it("compares every earlier substitute, not only the main account", () => {
+      const providers = [
+        account(main, "main@example.com"),
+        account(first, "backup@example.com"),
+        account(second, "backup@example.com"),
+      ];
+      expect(getSubscriptionFallbackIssue(settings, providers, second)?.kind).toBe("duplicate");
+    });
+    it("allows distinct verified subscriptions, including separate known workspaces", () => {
+      expect(
+        getSubscriptionFallbackIssue(
+          settings,
+          [
+            account(main, "same@example.com", "work"),
+            account(first, "same@example.com", "personal"),
+          ],
+          first,
+        ),
+      ).toBeNull();
+      expect(
+        getSubscriptionFallbackIssue(
+          settings,
+          [account(main, "one@example.com"), account(first, "two@example.com")],
+          first,
+        ),
+      ).toBeNull();
+    });
+    it("does not use plan labels or token presence as proof of a separate identity", () => {
+      expect(
+        getSubscriptionFallbackIssue(
+          settings,
+          [account(main, "main@example.com"), account(first)],
+          first,
+        )?.kind,
+      ).toBe("unverified");
+      expect(
+        getSubscriptionFallbackIssue(
+          settings,
+          [account(main), account(first, "backup@example.com")],
+          first,
+        )?.kind,
+      ).toBe("unverified");
+      expect(
+        getSubscriptionFallbackIssue(settings, [account(first, "backup@example.com")], first)?.kind,
+      ).toBe("unverified");
+    });
+    it("clears the duplicate warning after reconnecting to another account", () => {
+      const providers = [account(main, "same@example.com"), account(first, "same@example.com")];
+      expect(getSubscriptionFallbackIssue(settings, providers, first)?.kind).toBe("duplicate");
+      providers[1] = account(first, "different@example.com");
+      expect(getSubscriptionFallbackIssue(settings, providers, first)).toBeNull();
+    });
+    it("skips an unverified substitute without blocking a later distinct account", () => {
+      const providers = [
+        account(main, "main@example.com"),
+        account(first),
+        account(second, "different@example.com"),
+      ];
+      expect(getSubscriptionFallbackIssue(settings, providers, first)?.kind).toBe("unverified");
+      expect(getSubscriptionFallbackIssue(settings, providers, second)).toBeNull();
+    });
+    it("does not flag signed-out accounts or separate providers as duplicate subscriptions", () => {
+      expect(
+        getSubscriptionFallbackIssue(
+          settings,
+          [
+            account(main, "same@example.com"),
+            { ...account(first), auth: { status: "unauthenticated" } },
+          ],
+          first,
+        ),
+      ).toBeNull();
+      expect(
+        getSubscriptionFallbackIssue(
+          settings,
+          [
+            account(main, "same@example.com"),
+            { ...account(first, "same@example.com"), driver: ProviderDriverKind.make("codex") },
+          ],
+          first,
+        ),
+      ).toBeNull();
+    });
+    it("also protects Codex and treats missing workspace information conservatively", () => {
+      const providers = [
+        account(main, "same@example.com", "work"),
+        account(first, "same@example.com"),
+      ].map((provider) => ({ ...provider, driver: ProviderDriverKind.make("codex") }));
+      expect(getSubscriptionFallbackIssue(settings, providers, first)?.kind).toBe("duplicate");
+    });
+  });
   it("limits assignments to this thread and permits substitutes only for continued workers", () => {
     const main = ProviderInstanceId.make("codex");
     const backup = ProviderInstanceId.make("codex_backup");
