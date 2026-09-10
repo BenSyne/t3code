@@ -17,6 +17,8 @@ import { ProviderMaintenanceRunner } from "./providerMaintenanceRunner.ts";
 import { makeProviderMaintenanceCapabilities } from "./providerMaintenance.ts";
 import { makeProviderAutoUpdater } from "./providerAutoUpdate.ts";
 
+const decodeSnapshot = Schema.decodeUnknownEffect(OrchestrationShellSnapshot);
+
 it.effect(
   "updates each shared installation once, defers busy work, and bounds failed retries",
   () => {
@@ -74,7 +76,7 @@ it.effect(
           Layer.mock(ProviderService, { listSessions: () => Effect.succeed([]) }),
           Layer.mock(ProjectionSnapshotQuery, {
             getShellSnapshot: () =>
-              Schema.decodeUnknownEffect(OrchestrationShellSnapshot)({
+              decodeSnapshot({
                 snapshotSequence: 0,
                 projects: [],
                 updatedAt: "2026-01-01T00:00:00.000Z",
