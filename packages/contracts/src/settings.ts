@@ -608,6 +608,14 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         providerSettingsForm: { placeholder: "~/.claude", clearWhenEmpty: "omit" },
       }),
     ),
+    sessionHomePath: Schema.optionalKey(TrimmedString).pipe(
+      Schema.annotateKey({
+        title: "Shared conversation directory",
+        description:
+          "Share conversation history with another Claude account while keeping each login separate. Leave empty for independent conversations.",
+        providerSettingsForm: { placeholder: "~/.claude", clearWhenEmpty: "omit" },
+      }),
+    ),
     customModels: Schema.Array(CustomModelSetting).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
@@ -639,7 +647,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["binaryPath", "homePath", "autoCompactWindow", "launchArgs"],
+    order: ["binaryPath", "homePath", "sessionHomePath", "autoCompactWindow", "launchArgs"],
   },
 );
 export type ClaudeSettings = typeof ClaudeSettings.Type;
@@ -962,6 +970,14 @@ export const ServerSettings = Schema.Struct({
   defaultModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  orchestratorModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  /** Primary account followed by its ordered substitutes, within one provider. */
+  providerAccountFallbacks: Schema.Record(
+    ProviderInstanceId,
+    Schema.Array(ProviderInstanceId).check(Schema.isMaxLength(20)),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
   ),
@@ -1173,6 +1189,7 @@ const CodexSettingsPatch = Schema.Struct({
 });
 
 const ClaudeSettingsPatch = Schema.Struct({
+  sessionHomePath: Schema.optionalKey(TrimmedString),
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
   homePath: Schema.optionalKey(TrimmedString),
@@ -1234,6 +1251,13 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),
   ),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  orchestratorModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  providerAccountFallbacks: Schema.optionalKey(
+    Schema.Record(
+      ProviderInstanceId,
+      Schema.Array(ProviderInstanceId).check(Schema.isMaxLength(20)),
+    ),
+  ),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(

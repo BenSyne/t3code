@@ -2,6 +2,7 @@ import * as NodeOS from "node:os";
 
 import type { ClaudeSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
@@ -38,11 +39,72 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
 });
 
 export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationGroupKey")(
-  function* (config: Pick<ClaudeSettings, "homePath">): Effect.fn.Return<string, never, Path.Path> {
-    const resolvedHomePath = yield* resolveClaudeHomePath(config);
-    return `claude:home:${resolvedHomePath}`;
+  function* (
+    config: Pick<ClaudeSettings, "homePath"> & Partial<Pick<ClaudeSettings, "sessionHomePath">>,
+    baseEnv?: NodeJS.ProcessEnv,
+  ): Effect.fn.Return<string, never, Path.Path> {
+    const layout = yield* resolveClaudeSessionLayout(config, baseEnv);
+    return `claude:sessions:${layout.sharedPath}`;
   },
 );
+
+const SHARED_SESSION_DIRECTORIES = ["projects", "file-history", "plans"] as const;
+
+export const resolveClaudeSessionLayout = Effect.fn("resolveClaudeSessionLayout")(function* (
+  config: Pick<ClaudeSettings, "homePath"> & Partial<Pick<ClaudeSettings, "sessionHomePath">>,
+  baseEnv?: NodeJS.ProcessEnv,
+) {
+  const path = yield* Path.Path;
+  const configuredHome = config.homePath.trim() || (baseEnv ?? process.env).CLAUDE_CONFIG_DIR;
+  const accountPath = path.resolve(
+    configuredHome ? expandHomePath(configuredHome) : path.join(NodeOS.homedir(), ".claude"),
+  );
+  const sharedPath = config.sessionHomePath?.trim()
+    ? path.resolve(expandHomePath(config.sessionHomePath))
+    : accountPath;
+  return { accountPath, sharedPath };
+});
+
+export class ClaudeSessionStorageError extends Schema.TaggedError<ClaudeSessionStorageError>()(
+  "ClaudeSessionStorageError",
+  { detail: Schema.String },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
+/** Only conversation data is shared. Existing independent history is never replaced. */
+export const materializeClaudeSessionHome = Effect.fn("materializeClaudeSessionHome")(function* (
+  config: Pick<ClaudeSettings, "homePath" | "sessionHomePath">,
+  baseEnv?: NodeJS.ProcessEnv,
+) {
+  const { accountPath, sharedPath } = yield* resolveClaudeSessionLayout(config, baseEnv);
+  if (accountPath === sharedPath) return;
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  yield* fs.makeDirectory(accountPath, { recursive: true });
+  for (const directory of SHARED_SESSION_DIRECTORIES) {
+    const target = path.join(sharedPath, directory);
+    const link = path.join(accountPath, directory);
+    yield* fs.makeDirectory(target, { recursive: true });
+    const linkedTarget = yield* fs
+      .readLink(link)
+      .pipe(Effect.catch(() => Effect.succeed(undefined)));
+    if (linkedTarget !== undefined) {
+      if (path.resolve(accountPath, linkedTarget) === target) continue;
+      return yield* new ClaudeSessionStorageError({
+        detail: `The conversation directory '${link}' already points elsewhere. Use a fresh account directory.`,
+      });
+    }
+    if (yield* fs.exists(link)) {
+      return yield* new ClaudeSessionStorageError({
+        detail: `The conversation directory '${link}' already exists. Use a fresh account directory to keep its history intact.`,
+      });
+    }
+    yield* fs.symlink(target, link);
+  }
+});
 
 export const makeClaudeCapabilitiesCacheKey = Effect.fn("makeClaudeCapabilitiesCacheKey")(
   function* (

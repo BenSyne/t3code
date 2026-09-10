@@ -5,6 +5,7 @@ import {
   type ModelSelection,
   type ProjectId,
   type ProviderDriverKind,
+  type ProviderInstanceId,
   type ServerProvider,
   ServerSettings,
   type ServerSettingsPatch,
@@ -23,6 +24,136 @@ import {
 
 const ServerSettingsJson = fromLenientJson(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownOption(ServerSettingsJson);
+
+/** The order stays stable after a thread moves from its primary to a substitute. */
+export function providerAccountChain(
+  settings: Pick<ServerSettings, "providerAccountFallbacks">,
+  instanceId: ProviderInstanceId,
+): ReadonlyArray<ProviderInstanceId> {
+  for (const [primary, substitutes] of Object.entries(settings.providerAccountFallbacks)) {
+    if (substitutes.length === 0) continue;
+    if (primary === instanceId || substitutes.includes(instanceId)) {
+      return [primary as ProviderInstanceId, ...substitutes];
+    }
+  }
+  return [instanceId];
+}
+
+export function isOrchestratorSelection(
+  settings: Pick<ServerSettings, "orchestratorModelSelection" | "providerAccountFallbacks">,
+  selection: ModelSelection,
+): boolean {
+  const orchestrator = settings.orchestratorModelSelection;
+  if (!orchestrator || orchestrator.model !== selection.model) return false;
+  const chain = providerAccountChain(settings, orchestrator.instanceId);
+  return chain.slice(chain.indexOf(orchestrator.instanceId)).includes(selection.instanceId);
+}
+
+/** Reject ambiguous chains instead of choosing an arbitrary primary during recovery. */
+export function validateProviderAccountFallbacks(
+  settings: Pick<ServerSettings, "providerInstances" | "providerAccountFallbacks">,
+): string | null {
+  const assigned = new Set<string>();
+  for (const [primary, substitutes] of Object.entries(settings.providerAccountFallbacks)) {
+    if (substitutes.length === 0) continue;
+    const driver =
+      settings.providerInstances[primary as ProviderInstanceId]?.driver ??
+      (primary === "codex" || primary === "claudeAgent" ? primary : undefined);
+    if (driver !== "codex" && driver !== "claudeAgent") {
+      return "Account fallback requires a configured Codex or Claude primary account.";
+    }
+    for (const id of [primary as ProviderInstanceId, ...substitutes]) {
+      if (assigned.has(id)) return `Account '${id}' appears more than once in the fallback order.`;
+      if (
+        (settings.providerInstances[id]?.driver ??
+          (id === "codex" || id === "claudeAgent" ? id : undefined)) !== driver
+      ) {
+        return "Substitute accounts must use the same provider as their primary account.";
+      }
+      assigned.add(id);
+    }
+  }
+  return null;
+}
+
+/** Fresh credentials and shared native history make the new account eligible for continuation. */
+export function createSubscriptionAccountPatch(
+  settings: ServerSettings,
+  input: {
+    driver: "codex" | "claudeAgent";
+    instanceId: ProviderInstanceId;
+    name: string;
+    primaryId: ProviderInstanceId;
+    sharedHistoryPath?: string;
+  },
+): ServerSettingsPatch {
+  const name = input.name.trim();
+  if (
+    !name ||
+    Object.values(settings.providerInstances).some(
+      (instance) => instance.displayName?.toLowerCase() === name.toLowerCase(),
+    )
+  ) {
+    throw new Error("Choose a distinct account name.");
+  }
+  if (settings.providerInstances[input.instanceId])
+    throw new Error("This account ID already exists.");
+  const primary = settings.providerInstances[input.primaryId];
+  const primaryDriver = primary?.driver ?? input.primaryId;
+  if (primaryDriver !== input.driver)
+    throw new Error("Choose a main account with the same provider.");
+  const config =
+    primary?.config && typeof primary.config === "object" && !Array.isArray(primary.config)
+      ? (primary.config as Record<string, unknown>)
+      : settings.providers[input.driver];
+  const readPath = (key: string) =>
+    typeof config[key as keyof typeof config] === "string"
+      ? String(config[key as keyof typeof config]).trim()
+      : "";
+  const accountHome = `~/.t3/subscriptions/${input.instanceId}`;
+  const accountConfig =
+    input.driver === "codex"
+      ? { homePath: input.sharedHistoryPath ?? readPath("homePath"), shadowHomePath: accountHome }
+      : {
+          homePath: accountHome,
+          sessionHomePath:
+            input.sharedHistoryPath ??
+            (readPath("sessionHomePath") || readPath("homePath") || "~/.claude"),
+        };
+  const chain = providerAccountChain(settings, input.primaryId);
+  const primaryId = chain[0]!;
+  return {
+    providerInstances: {
+      ...settings.providerInstances,
+      [input.instanceId]: {
+        driver: primaryDriver as ProviderDriverKind,
+        displayName: name,
+        enabled: true,
+        config: { ...accountConfig, binaryPath: readPath("binaryPath") },
+      },
+    },
+    providerAccountFallbacks: {
+      ...settings.providerAccountFallbacks,
+      [primaryId]: [...chain.slice(1), input.instanceId],
+    },
+  };
+}
+
+export function removeSubscriptionAccountReferences(
+  settings: Pick<ServerSettings, "providerAccountFallbacks" | "orchestratorModelSelection">,
+  instanceId: ProviderInstanceId,
+): ServerSettingsPatch {
+  return {
+    providerAccountFallbacks: Object.fromEntries(
+      Object.entries(settings.providerAccountFallbacks)
+        .filter(([primary]) => primary !== instanceId)
+        .map(([primary, substitutes]) => [primary, substitutes.filter((id) => id !== instanceId)]),
+    ),
+    ...(settings.orchestratorModelSelection?.instanceId === instanceId
+      ? { orchestratorModelSelection: null }
+      : {}),
+  };
+}
 
 export function resolveProjectAgentBrowserAccess(
   settings: Pick<ServerSettings, "enableAgentBrowserAccess" | "projectAgentBrowserAccessOverrides">,
@@ -249,6 +380,12 @@ export function applyServerSettingsPatch(
       : {}),
     ...(patch.defaultModelSelection !== undefined
       ? { defaultModelSelection: patch.defaultModelSelection }
+      : {}),
+    ...(patch.orchestratorModelSelection !== undefined
+      ? { orchestratorModelSelection: patch.orchestratorModelSelection }
+      : {}),
+    ...(patch.providerAccountFallbacks !== undefined
+      ? { providerAccountFallbacks: patch.providerAccountFallbacks }
       : {}),
     ...(patch.defaultProjectScripts !== undefined
       ? { defaultProjectScripts: patch.defaultProjectScripts }

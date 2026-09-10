@@ -31,6 +31,7 @@ import { HttpClient } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { makeCodexTextGeneration } from "../../textGeneration/CodexTextGeneration.ts";
+import { makeSubscriptionAuth } from "../SubscriptionAuth.ts";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
@@ -134,8 +135,11 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
       const modelManifest = yield* ModelManifest.ModelManifest;
-      const processEnv = mergeProviderInstanceEnvironment(environment);
-      const homeLayout = yield* resolveCodexHomeLayout(config);
+      const processEnv = { ...mergeProviderInstanceEnvironment(environment) };
+      const homeLayout = yield* resolveCodexHomeLayout({
+        ...config,
+        homePath: config.homePath.trim() || processEnv.CODEX_HOME || "",
+      });
       const continuationIdentity = codexContinuationIdentity(homeLayout);
       const stampIdentity = withInstanceIdentity({
         instanceId,
@@ -160,7 +164,16 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         enabled,
         binaryPath: expandHomePath(config.binaryPath),
         homePath: homeLayout.effectiveHomePath ?? "",
+        ...(homeLayout.mode === "authOverlay"
+          ? {
+              launchArgs: `${resolveCodexLaunchArgs(config.launchArgs, processEnv)} -c 'cli_auth_credentials_store="file"'`,
+            }
+          : {}),
       } satisfies CodexSettings;
+      if (homeLayout.mode === "authOverlay") {
+        // An ambient launch-args override must not undo per-account credential isolation.
+        processEnv.T3CODE_CODEX_LAUNCH_ARGS = effectiveConfig.launchArgs;
+      }
       const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
         resolveProviderMaintenanceCapabilitiesEffect(
           makeCodexMaintenanceResolver(homeLayout.sharedHomePath),
@@ -333,6 +346,17 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
             ),
           );
 
+      const auth = yield* makeSubscriptionAuth({
+        instanceId,
+        provider: "codex",
+        binaryPath: effectiveConfig.binaryPath || "codex",
+        environment: {
+          ...processEnv,
+          CODEX_HOME: homeLayout.effectiveHomePath ?? homeLayout.sharedHomePath,
+        },
+        codexFileCredentials: homeLayout.mode === "authOverlay",
+        onChanged: snapshot.refresh,
+      });
       return {
         instanceId,
         driverKind: DRIVER_KIND,
@@ -341,6 +365,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         accentColor,
         enabled,
         snapshot,
+        auth,
         snapshotForCwd,
         consumeResetCredit,
         adapter,

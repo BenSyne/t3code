@@ -13,6 +13,11 @@ import { createModelSelection } from "./model.ts";
 import { resolveProjectScripts, projectScriptsInheritDefaults } from "./projectScripts.ts";
 import {
   applyServerSettingsPatch,
+  providerAccountChain,
+  isOrchestratorSelection,
+  validateProviderAccountFallbacks,
+  createSubscriptionAccountPatch,
+  removeSubscriptionAccountReferences,
   isModelSelectionProviderEnabled,
   parsePersistedServerObservabilitySettings,
   resolveSourceControlWriterModelSelection,
@@ -21,6 +26,127 @@ import {
 } from "./serverSettings.ts";
 
 describe("serverSettings helpers", () => {
+  it("adds isolated accounts in order while retaining the selected orchestrator model", () => {
+    const primaryId = ProviderInstanceId.make("codex");
+    const first = ProviderInstanceId.make("codex_backup_1");
+    const second = ProviderInstanceId.make("codex_backup_2");
+    const initial = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      orchestratorModelSelection: {
+        instanceId: primaryId,
+        model: "astra-test",
+        options: [{ id: "reasoningEffort", value: "high" }],
+      },
+    });
+    const added = applyServerSettingsPatch(
+      initial,
+      createSubscriptionAccountPatch(initial, {
+        driver: "codex",
+        instanceId: first,
+        name: "Personal backup",
+        primaryId,
+      }),
+    );
+    const settings = applyServerSettingsPatch(
+      added,
+      createSubscriptionAccountPatch(added, {
+        driver: "codex",
+        instanceId: second,
+        name: "Work backup",
+        primaryId: first,
+      }),
+    );
+    expect(validateProviderAccountFallbacks(settings)).toBeNull();
+    expect(providerAccountChain(settings, second)).toEqual([primaryId, first, second]);
+    expect(settings.providerInstances[first]?.config).toMatchObject({
+      homePath: "",
+      shadowHomePath: "~/.t3/subscriptions/codex_backup_1",
+    });
+    expect(settings.providerInstances[second]?.config).toMatchObject({
+      homePath: "",
+      shadowHomePath: "~/.t3/subscriptions/codex_backup_2",
+    });
+    expect(isOrchestratorSelection(settings, { instanceId: second, model: "astra-test" })).toBe(
+      true,
+    );
+    expect(isOrchestratorSelection(settings, { instanceId: second, model: "another-model" })).toBe(
+      false,
+    );
+    const removed = applyServerSettingsPatch(
+      settings,
+      removeSubscriptionAccountReferences(settings, first),
+    );
+    expect(providerAccountChain(removed, primaryId)).toEqual([primaryId, second]);
+    const cleared = applyServerSettingsPatch(
+      removed,
+      removeSubscriptionAccountReferences(removed, primaryId),
+    );
+    expect(cleared.orchestratorModelSelection).toBeNull();
+    expect(cleared.providerAccountFallbacks).toEqual({});
+  });
+
+  it("keeps Claude logins private while sharing the main account's history", () => {
+    const primaryId = ProviderInstanceId.make("claudeAgent");
+    const instanceId = ProviderInstanceId.make("claude_backup");
+    const patch = createSubscriptionAccountPatch(DEFAULT_SERVER_SETTINGS, {
+      driver: "claudeAgent",
+      primaryId,
+      instanceId,
+      name: "Claude Backup",
+    });
+    expect(patch.providerInstances?.[instanceId]?.config).toMatchObject({
+      homePath: "~/.t3/subscriptions/claude_backup",
+      sessionHomePath: "~/.claude",
+    });
+    const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, patch);
+    expect(() =>
+      createSubscriptionAccountPatch(settings, {
+        driver: "claudeAgent",
+        primaryId,
+        instanceId: ProviderInstanceId.make("another"),
+        name: "claude backup",
+      }),
+    ).toThrow("distinct");
+    expect(
+      validateProviderAccountFallbacks({
+        ...settings,
+        providerAccountFallbacks: { [primaryId]: [instanceId, instanceId] },
+      }),
+    ).toContain("more than once");
+    expect(
+      validateProviderAccountFallbacks({
+        ...settings,
+        providerAccountFallbacks: { codex: [instanceId] },
+      }),
+    ).toContain("same provider");
+  });
+
+  it("replaces orchestrator options and fallback chains rather than deep-merging stale values", () => {
+    const instanceId = ProviderInstanceId.make("codex");
+    const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      orchestratorModelSelection: {
+        instanceId,
+        model: "a",
+        options: [{ id: "reasoningEffort", value: "high" }],
+      },
+      providerAccountFallbacks: { [instanceId]: [ProviderInstanceId.make("codex_backup")] },
+    });
+    const next = applyServerSettingsPatch(first, {
+      orchestratorModelSelection: { instanceId, model: "b" },
+      providerAccountFallbacks: {},
+    });
+    expect(next.orchestratorModelSelection).toEqual({ instanceId, model: "b" });
+    expect(next.providerAccountFallbacks).toEqual({});
+  });
+
+  it("finds an account's new chain after its old substitutes were removed", () => {
+    const oldPrimary = ProviderInstanceId.make("codex_old");
+    const primary = ProviderInstanceId.make("codex");
+    const settings = {
+      providerAccountFallbacks: { [oldPrimary]: [], [primary]: [oldPrimary] },
+    };
+    expect(providerAccountChain(settings, oldPrimary)).toEqual([primary, oldPrimary]);
+  });
+
   it("inherits actions, preserves existing actions, and supports empty overrides and reset", () => {
     const project = { id: ProjectId.make("project-actions"), scripts: [] };
     const action = {
