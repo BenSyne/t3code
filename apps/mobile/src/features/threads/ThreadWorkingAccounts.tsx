@@ -1,4 +1,9 @@
-import type { ModelSelection, ServerConfig, ThreadOrchestration } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ModelSelection,
+  ServerConfig,
+  ThreadOrchestration,
+} from "@t3tools/contracts";
 import { useState } from "react";
 import {
   getSubscriptionFallbackIssue,
@@ -9,6 +14,7 @@ import { Modal, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/AppText";
 import { ComposerInlineControl } from "../../components/ComposerToolbar";
+import { ThreadUsageLimits } from "./ComposerUsageLimits";
 
 export function ThreadWorkingAccounts({
   value,
@@ -16,12 +22,14 @@ export function ThreadWorkingAccounts({
   config,
   selection,
   disabled,
+  environmentId,
 }: {
   value: ThreadOrchestration;
   onChange: (value: ThreadOrchestration) => void;
   config: ServerConfig | null;
   selection: ModelSelection | null;
   disabled: boolean;
+  environmentId: EnvironmentId | null;
 }) {
   const [open, setOpen] = useState(false);
   const providers = config?.providers ?? [];
@@ -216,6 +224,12 @@ export function ThreadWorkingAccounts({
           </ScrollView>
         </SafeAreaView>
       </Modal>
+      <ThreadUsageLimits
+        environmentId={environmentId}
+        selection={selection}
+        orchestration={value}
+        config={config}
+      />
     </>
   );
 }

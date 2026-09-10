@@ -1,4 +1,5 @@
 import { ThreadWorkingAccounts } from "./ThreadWorkingAccounts";
+import { ThreadUsageLimits } from "./ComposerUsageLimits";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
   questionAttachmentDraftId,
@@ -4201,7 +4202,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         size={composerControlsInStrip ? "xs" : "sm"}
       />
-
+      <ThreadUsageLimits
+        environmentId={environmentId}
+        selection={{ instanceId: selectedInstanceId, model: selectedModel }}
+        orchestration={props.orchestration}
+        settings={settings}
+        providers={providerStatuses}
+        size={composerControlsInStrip ? "xs" : "sm"}
+      />
       {composerControlsCompact ? (
         <CompactComposerControlsMenu
           interactionMode={interactionMode}

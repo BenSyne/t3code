@@ -809,6 +809,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                       onPickFiles={props.onPickDraftFiles}
                     />
                     <ThreadWorkingAccounts
+                      environmentId={props.environmentId}
                       value={props.selectedThread.orchestration ?? DEFAULT_THREAD_ORCHESTRATION}
                       config={props.serverConfig}
                       selection={currentModelSelection}

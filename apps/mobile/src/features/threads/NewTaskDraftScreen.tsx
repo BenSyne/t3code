@@ -1362,6 +1362,7 @@ export function NewTaskDraftScreen(props: {
                       onPress={settingsSheetPresentation.open}
                     />
                     <ThreadWorkingAccounts
+                      environmentId={flow.selectedEnvironmentId}
                       value={flow.orchestration}
                       config={selectedEnvironmentServerConfig}
                       selection={flow.selectedModel}
