@@ -1,6 +1,13 @@
 import { useId, useState, type ReactNode } from "react";
 import { Field } from "@base-ui/react/field";
-import { CheckIcon, ExternalLinkIcon, InfoIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
+import {
+  CheckIcon,
+  CopyIcon,
+  ExternalLinkIcon,
+  InfoIcon,
+  MoreHorizontalIcon,
+  PlusIcon,
+} from "lucide-react";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
@@ -19,6 +26,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
+import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { ensureLocalApi } from "../../localApi";
 import { randomUUID } from "../../lib/utils";
 import { useEnvironmentQuery } from "../../state/query";
@@ -155,7 +163,20 @@ function SubscriptionAccountRow({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  const [copiedFlowId, setCopiedFlowId] = useState<string | null>(null);
+  const { copyToClipboard, isCopied } = useCopyToClipboard<string | null>({
+    target: "subscription sign-in URL",
+    onCopy: (flowId) => {
+      setCopiedFlowId(flowId);
+      setError(null);
+    },
+    onError: () =>
+      setError(
+        "Could not copy the sign-in URL. Check your browser's clipboard permission and try again.",
+      ),
+  });
   const auth = query.data;
+  const linkCopied = isCopied && copiedFlowId !== null && copiedFlowId === auth?.flowId;
   const active =
     auth?.phase === "starting" || auth?.phase === "waiting" || auth?.phase === "verifying";
   const signedIn = provider.auth.status === "authenticated";
@@ -240,6 +261,7 @@ function SubscriptionAccountRow({
                 disabled={disabled || !provider.enabled || !provider.installed}
                 onClick={() => {
                   setCode("");
+                  setCopiedFlowId(null);
                   void run(() => start(target));
                 }}
               >
@@ -289,20 +311,41 @@ function SubscriptionAccountRow({
           </p>
           <div className="flex flex-wrap items-center gap-2">
             {auth.authorizationUrl ? (
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={readOnly}
-                onClick={() => {
-                  if (auth.authorizationUrl)
-                    void ensureLocalApi()
-                      .shell.openExternal(auth.authorizationUrl)
-                      .catch(() => setError("Could not open the sign-in page."));
-                }}
-              >
-                <ExternalLinkIcon data-icon="inline-start" />
-                Open sign-in page
-              </Button>
+              <>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={readOnly}
+                  onClick={() => {
+                    if (auth.authorizationUrl) copyToClipboard(auth.authorizationUrl, auth.flowId);
+                  }}
+                >
+                  {linkCopied ? (
+                    <CheckIcon data-icon="inline-start" />
+                  ) : (
+                    <CopyIcon data-icon="inline-start" />
+                  )}
+                  <span aria-live="polite">{linkCopied ? "URL copied" : "Copy sign-in URL"}</span>
+                </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={readOnly}
+                  onClick={() => {
+                    if (auth.authorizationUrl)
+                      void ensureLocalApi()
+                        .shell.openExternal(auth.authorizationUrl)
+                        .catch(() =>
+                          setError(
+                            "Could not open the sign-in page. Copy the sign-in URL and open it in your browser.",
+                          ),
+                        );
+                  }}
+                >
+                  <ExternalLinkIcon data-icon="inline-start" />
+                  Open sign-in page
+                </Button>
+              </>
             ) : null}
             {auth.flowId ? (
               <Button
@@ -323,6 +366,13 @@ function SubscriptionAccountRow({
             ) : null}
             {provider.driver === "codex" ? <CodexSignInHelp /> : null}
           </div>
+          {auth.authorizationUrl ? (
+            <p className="text-xs text-muted-foreground">
+              To use a different subscription, paste the sign-in URL into a private or incognito
+              browser window. Check the account before continuing, and keep this sign-in open in T3
+              until it finishes.
+            </p>
+          ) : null}
           {provider.driver === "claudeAgent" && auth.flowId ? (
             <form
               className="flex flex-wrap items-end gap-2"
