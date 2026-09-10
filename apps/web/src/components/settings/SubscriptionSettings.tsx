@@ -207,7 +207,7 @@ function SubscriptionSignIn({
   );
 }
 
-/** Environment-local accounts, their failover order, and the native orchestrator selection. */
+/** Environment-local accounts, their failover order, and their usage-limit fallback order. */
 export function SubscriptionSettings({
   environmentId,
   providers,
@@ -230,8 +230,6 @@ export function SubscriptionSettings({
     value: provider.instanceId,
     label: `${provider.displayName ?? provider.driver} (${provider.driver === "codex" ? "Codex" : "Claude"})`,
   }));
-  const selection = settings.orchestratorModelSelection;
-  const orchestrator = accounts.find((provider) => provider.instanceId === selection?.instanceId);
   const primary = accounts.find((provider) => provider.instanceId === primaryId) ?? accounts[0];
   const label = (id: ProviderInstanceId) =>
     accounts.find((provider) => provider.instanceId === id)?.displayName ?? id;
@@ -257,68 +255,6 @@ export function SubscriptionSettings({
   const disabled = readOnly || saving;
   return (
     <>
-      <SettingsSection title="Subscription orchestrator">
-        <SettingsRow
-          title="Orchestrator account"
-          description="This subscription runs the orchestrator and coordinates workers in the project."
-          control={
-            <AccountSelect
-              label="Orchestrator account"
-              value={selection?.instanceId ?? "off"}
-              disabled={disabled}
-              items={[{ value: "off", label: "Off" }, ...accountItems]}
-              onChange={(id) => {
-                const provider = accounts.find((account) => account.instanceId === id);
-                if (id === "off") {
-                  void save({ orchestratorModelSelection: null });
-                  return;
-                }
-                const model =
-                  provider?.models.find((entry) => entry.isDefault) ?? provider?.models[0];
-                if (!provider || !model) {
-                  setError("Sign in to this account and refresh its models first.");
-                  return;
-                }
-                void save({
-                  orchestratorModelSelection: {
-                    instanceId: provider.instanceId,
-                    model: model.slug,
-                  },
-                });
-              }}
-            />
-          }
-        />
-        {selection ? (
-          <SettingsRow
-            title="Orchestrator model"
-            description="Models come from the selected account. New orchestrator tasks use this exact model."
-            control={
-              <AccountSelect
-                label="Orchestrator model"
-                value={selection.model}
-                disabled={disabled}
-                items={
-                  orchestrator?.models.map((model) => ({ value: model.slug, label: model.name })) ??
-                  []
-                }
-                onChange={(model) =>
-                  void save({ orchestratorModelSelection: { ...selection, model } })
-                }
-              />
-            }
-          >
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={disabled}
-              onClick={() => void save({ defaultModelSelection: selection })}
-            >
-              Use for new tasks by default
-            </Button>
-          </SettingsRow>
-        ) : null}
-      </SettingsSection>
       <SettingsSection title="Subscription accounts">
         <SettingsRow
           title="Add subscription"

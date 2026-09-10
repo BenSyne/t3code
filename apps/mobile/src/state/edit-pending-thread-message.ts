@@ -54,6 +54,7 @@ export async function editPendingThreadMessage(message: QueuedThreadMessage): Pr
     }
     updateComposerDraftSettings(draftKey, {
       ...(message.modelSelection ? { modelSelection: message.modelSelection } : {}),
+      ...(message.orchestration ? { orchestration: message.orchestration } : {}),
       ...(message.runtimeMode ? { runtimeMode: message.runtimeMode } : {}),
       ...(message.interactionMode ? { interactionMode: message.interactionMode } : {}),
     });

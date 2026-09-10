@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type {
   EnvironmentId,
   ModelSelection,
+  ThreadOrchestration,
   ProjectReadFileResult,
   ProviderInteractionMode,
   ProviderOptionSelection,
@@ -13,6 +14,7 @@ import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
+  DEFAULT_THREAD_ORCHESTRATION,
   MessageId,
   T3_PROJECT_FILE_NAME,
   ThreadId,
@@ -167,6 +169,8 @@ type NewTaskFlowContextValue = {
   readonly selectedProject: EnvironmentProject | null;
   readonly modelOptions: ReadonlyArray<ModelOption>;
   readonly selectedModel: ModelSelection | null;
+  readonly orchestration: ThreadOrchestration;
+  readonly setOrchestration: (value: ThreadOrchestration) => void;
   readonly selectedModelOption: ModelOption | null;
   readonly selectedProviderStatus: ServerProvider | null;
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
@@ -891,6 +895,15 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     [selectedProjectDraftKey, selectedProviderStatus],
   );
 
+  const orchestration = selectedProjectDraft.orchestration ?? DEFAULT_THREAD_ORCHESTRATION;
+  const setOrchestration = useCallback(
+    (value: ThreadOrchestration) => {
+      if (selectedProjectDraftKey)
+        updateComposerDraftSettings(selectedProjectDraftKey, { orchestration: value });
+    },
+    [selectedProjectDraftKey],
+  );
+
   const beginEditingPendingTask = useCallback((messageId: string): boolean => {
     const message = findQueuedPendingTask(messageId);
     if (!message?.creation) {
@@ -903,6 +916,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       replaceComposerDraftAttachments(draftKey, message.attachments);
       updateComposerDraftSettings(draftKey, {
         modelSelection: message.modelSelection,
+        orchestration: message.orchestration,
         runtimeMode: message.runtimeMode,
         interactionMode: message.interactionMode,
         workspaceSelection: {
@@ -967,6 +981,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         text,
         attachments: draft.attachments,
         modelSelection: draftModelSelection,
+        orchestration: draft.orchestration ?? DEFAULT_THREAD_ORCHESTRATION,
         runtimeMode: draft.runtimeMode ?? DEFAULT_RUNTIME_MODE,
         interactionMode: resolvePendingTaskInteractionMode({
           preferenceLoaded: planModePreferenceLoaded,
@@ -1149,6 +1164,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       modelOptions,
       selectedModel,
       selectedModelOption,
+      orchestration,
+      setOrchestration,
       selectedProviderStatus,
       providerGroups,
       filteredBranches,
@@ -1211,6 +1228,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       selectedModel,
       selectedModelKey,
       selectedModelOption,
+      orchestration,
+      setOrchestration,
       selectedProjectDraftKey,
       selectedProviderStatus,
       setSelectedModelOptions,

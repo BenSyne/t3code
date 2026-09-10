@@ -69,7 +69,7 @@ describe("mobile model options", () => {
       },
     };
     expect(buildModelOptions(orchestratorConfig, null).map((option) => option.subtitle)).toEqual([
-      "Orchestrator",
+      "",
       "",
     ]);
     const projectId = ProjectId.make("restricted");
@@ -77,10 +77,10 @@ describe("mobile model options", () => {
       ...orchestratorConfig,
       settings: { ...orchestratorConfig.settings, projectProviderAccounts: { [projectId]: [] } },
     };
-    expect(buildModelOptions(restricted, null, projectId)).toEqual([]);
+    expect(buildModelOptions(restricted, null, projectId)).toHaveLength(2);
     const selection = orchestratorConfig.settings.orchestratorModelSelection;
-    expect(buildModelOptions(restricted, selection, projectId)[0]?.isUnavailable).toBe(true);
-    expect(isModelSelectionUnavailable(restricted, selection, projectId)).toBe(true);
+    expect(buildModelOptions(restricted, selection, projectId)[0]?.isUnavailable).not.toBe(true);
+    expect(isModelSelectionUnavailable(restricted, selection, projectId)).toBe(false);
     expect(buildModelOptions(restricted, null)).toHaveLength(2);
   });
 

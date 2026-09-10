@@ -1,3 +1,4 @@
+import { ThreadWorkingAccounts } from "./ThreadWorkingAccounts";
 import { useAtomValue } from "@effect/atom-react";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import {
@@ -1359,6 +1360,13 @@ export function NewTaskDraftScreen(props: {
                       label={flow.selectedModelOption?.label ?? "Choose model"}
                       maxWidth={152}
                       onPress={settingsSheetPresentation.open}
+                    />
+                    <ThreadWorkingAccounts
+                      value={flow.orchestration}
+                      config={selectedEnvironmentServerConfig}
+                      selection={flow.selectedModel}
+                      disabled={isComposerInteractionLocked}
+                      onChange={flow.setOrchestration}
                     />
                     {flow.planModeEnabled ? (
                       <ComposerInlineControl

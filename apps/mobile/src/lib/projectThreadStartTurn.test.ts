@@ -81,6 +81,10 @@ describe("new thread on an existing branch", () => {
         text: "Start fresh",
         uploadedAttachments: [],
         modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" },
+        orchestration: {
+          mode: "delegated",
+          workerAccountIds: [ProviderInstanceId.make("claudeAgent")],
+        },
         runtimeMode: "full-access",
         interactionMode: "default",
         workspaceMode: "local",
@@ -92,6 +96,7 @@ describe("new thread on an existing branch", () => {
 
       expect(input.bootstrap.createThread).toMatchObject({
         projectId: "project",
+        orchestration: { mode: "delegated", workerAccountIds: ["claudeAgent"] },
         branch: "feature/existing",
         worktreePath,
       });

@@ -3,12 +3,11 @@ import {
   type ProviderInstanceId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
-  type ModelSelection,
 } from "@t3tools/contracts";
 import { memo, useEffect, useMemo, useState } from "react";
 import type { VariantProps } from "class-variance-authority";
 import { Badge } from "../ui/badge";
-import { Button, buttonVariants } from "../ui/button";
+import { buttonVariants } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -34,7 +33,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
    */
   activeInstanceId: ProviderInstanceId;
   model: string;
-  orchestratorModelSelection?: ModelSelection | null;
   lockedProvider: ProviderDriverKind | null;
   lockedContinuationGroupKey?: string | null;
   /** Instance entries rendered in the sidebar + used to resolve display name. */
@@ -228,25 +226,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         className="before:hidden [--viewport-inline-padding:0]"
         viewportClassName="overflow-hidden! rounded-[calc(var(--radius-lg)-1px)] p-0 [clip-path:inset(0_round_calc(var(--radius-lg)-1px))]"
       >
-        {props.orchestratorModelSelection && props.lockedProvider === null ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="m-2"
-            disabled={Boolean(
-              props.getModelDisabledReason?.(
-                props.orchestratorModelSelection.instanceId,
-                props.orchestratorModelSelection.model,
-              ),
-            )}
-            onClick={() => {
-              const selection = props.orchestratorModelSelection;
-              if (selection) handleInstanceModelChange(selection.instanceId, selection.model);
-            }}
-          >
-            Use orchestrator · {props.orchestratorModelSelection.model}
-          </Button>
-        ) : null}
         <ModelPickerContent
           activeInstanceId={activeInstanceId}
           model={props.model}

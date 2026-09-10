@@ -1,3 +1,7 @@
+import { DEFAULT_THREAD_ORCHESTRATION, type ThreadOrchestration } from "@t3tools/contracts";
+import { ThreadWorkingAccounts } from "./ThreadWorkingAccounts";
+import { threadEnvironment } from "../../state/threads";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useAtomValue } from "@effect/atom-react";
 import type {
@@ -281,6 +285,25 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.connectionState !== "connected" || props.queueCount > 0 || attachmentsUploading
       ? "Queue"
       : "Send";
+  const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
+  const [savingAccounts, setSavingAccounts] = useState(false);
+  const changeWorkingAccounts = async (orchestration: ThreadOrchestration) => {
+    if (savingAccounts) return;
+    setSavingAccounts(true);
+    try {
+      const result = await updateMetadata({
+        environmentId: props.environmentId,
+        input: { threadId: props.selectedThread.id, orchestration },
+      });
+      if (result._tag === "Failure")
+        Alert.alert(
+          "Working accounts not saved",
+          "Wait for the current turn to finish and check your connection, then try again.",
+        );
+    } finally {
+      setSavingAccounts(false);
+    }
+  };
   const currentModelSelection = props.selectedThread.modelSelection;
   const currentRuntimeMode = props.selectedThread.runtimeMode;
   const modelUnavailable =
@@ -784,6 +807,20 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                       )}
                       onPickMedia={props.onPickDraftMedia}
                       onPickFiles={props.onPickDraftFiles}
+                    />
+                    <ThreadWorkingAccounts
+                      value={props.selectedThread.orchestration ?? DEFAULT_THREAD_ORCHESTRATION}
+                      config={props.serverConfig}
+                      selection={currentModelSelection}
+                      disabled={
+                        savingAccounts ||
+                        props.connectionState !== "connected" ||
+                        props.selectedThread.session?.status === "running" ||
+                        props.selectedThread.session?.status === "starting" ||
+                        props.selectedThread.hasPendingApprovals ||
+                        props.selectedThread.hasPendingUserInput
+                      }
+                      onChange={(value) => void changeWorkingAccounts(value)}
                     />
                     <View className="min-w-0 shrink" style={{ maxWidth: 152 }}>
                       <ComposerInlineControl

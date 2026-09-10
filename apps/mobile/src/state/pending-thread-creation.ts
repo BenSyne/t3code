@@ -141,6 +141,7 @@ export function pendingThreadCreationShell(
     projectId: creation.projectId,
     title: deriveThreadTitleFromPrompt(message.text),
     modelSelection: message.modelSelection,
+    ...(message.orchestration ? { orchestration: message.orchestration } : {}),
     runtimeMode: message.runtimeMode ?? DEFAULT_RUNTIME_MODE,
     interactionMode: message.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
     branch: creation.branch,

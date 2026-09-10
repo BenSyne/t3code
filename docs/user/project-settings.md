@@ -19,29 +19,10 @@ Reset that list to use shared actions again. Existing project actions are preser
 Project names, icons, removal, and importing actions from a checkout remain project-specific.
 When there are several checkouts, the checkout picker selects which actions and grouping to edit.
 
-## Choose accounts for a project
+## Choose working accounts
 
-Open a project's settings from its sidebar menu, or select it in **Settings → Projects**.
-Under **Provider accounts**, turn off **Allow all accounts** and select the accounts that
-may work on that checkout. Accounts belong to the machine running the project.
-
-For a Codex-only project, select your Codex main and backup accounts and leave Claude
-and other providers off. Choose a Codex model for the project's default model and, when
-using orchestration, a Codex account and model in **Settings → Providers**.
-
-The account list applies to direct tasks, delegated workers, and automatic substitutes.
-Fallback follows the order configured in Providers and skips accounts excluded here.
-Changing the list keeps existing history and takes effect on the next turn. A task on
-an excluded account cannot continue until that account is allowed again. New accounts
-must be explicitly added to a restricted project. Turn **Allow all accounts** back on
-to remove the restriction. Connected mobile clients follow the same account list;
-edit the list from web or desktop.
-
-The orchestrator decides whether a task benefits from delegation. It lists allowed
-accounts, starts bounded worker tasks, reads their results, and integrates the work.
-It does not send every task to every provider. Choosing one provider for all allowed
-accounts keeps both the orchestrator and its workers on that provider. Workers share
-the project's working directory.
+Working accounts are selected per thread in the chat controls. See
+[subscription orchestration](./providers-codex.md#use-a-subscription-as-the-orchestrator).
 
 ## Project icons
 

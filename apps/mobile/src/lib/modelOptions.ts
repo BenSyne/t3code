@@ -8,10 +8,6 @@ import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
-import {
-  isOrchestratorSelection,
-  isProjectProviderAccountAllowed,
-} from "@t3tools/shared/serverSettings";
 
 export type ModelOption = {
   readonly key: string;
@@ -66,20 +62,15 @@ function normalizeSelectionOptions(
       };
 }
 
-/** Whether project restrictions or Antigravity setup prevent using a selection. */
+/** Whether Antigravity setup prevent using a selection. */
 export function isModelSelectionUnavailable(
   config: T3ServerConfig | null | undefined,
   selection: ModelSelection | null | undefined,
-  projectId?: ProjectId | null,
+  _projectId?: ProjectId | null,
 ): boolean {
   if (!config || !selection) {
     return false;
   }
-  if (
-    config.settings &&
-    !isProjectProviderAccountAllowed(config.settings, projectId, selection.instanceId)
-  )
-    return true;
   const provider = config.providers.find(
     (candidate) => candidate.instanceId === selection.instanceId,
   );
@@ -167,8 +158,6 @@ export function buildModelOptions(
 
   for (const provider of config?.providers ?? []) {
     if (
-      (config?.settings &&
-        !isProjectProviderAccountAllowed(config.settings, projectId, provider.instanceId)) ||
       !provider.enabled ||
       !provider.installed ||
       provider.auth.status === "unauthenticated" ||
@@ -183,14 +172,7 @@ export function buildModelOptions(
       options.set(key, {
         key,
         label: model.name,
-        subtitle:
-          config?.settings &&
-          isOrchestratorSelection(config.settings, {
-            instanceId: provider.instanceId,
-            model: model.slug,
-          })
-            ? "Orchestrator"
-            : (model.subProvider ?? ""),
+        subtitle: model.subProvider ?? "",
         providerKey: provider.instanceId,
         providerLabel,
         providerDriver: provider.driver,

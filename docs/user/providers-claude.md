@@ -12,9 +12,8 @@ Choose your main Claude account, give the new account a distinct name, and selec
 sharing the main account's conversation storage. You can reorder substitutes or
 choose a different main account after signing in.
 
-Select a Claude account and one of its available models under **Subscription
-orchestrator** to run orchestration through that subscription. Start a new task
-with that account and model. See [subscription orchestration](./providers-codex.md#use-a-subscription-as-the-orchestrator).
+Select a Claude account and model in the chat, then open **Working accounts**
+to use that model for both planning and development or choose separate workers. See [subscription orchestration](./providers-codex.md#use-a-subscription-as-the-orchestrator).
 
 For manually configured directories:
 

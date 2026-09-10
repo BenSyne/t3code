@@ -67,18 +67,30 @@ contains a copied Codex setup. Use a fresh shadow directory and sign in again.
 
 ## Use a subscription as the orchestrator
 
-In **Settings > Providers > Subscription orchestrator**, select an account and a
-model offered by that account. Choose **Use orchestrator** in a new task's model
-picker, or make it the default for new tasks. The selected subscription runs the
-orchestrator and can delegate work to other connected providers in the project.
-Workers share the task's working directory. Configure orchestration before
-starting a new task so its tools are attached when the provider session starts.
+Choose the account and model in the chat's model picker. Open **Working accounts**
+next to it to choose how that thread runs:
 
-The same selection and automatic account continuation work on web, desktop, and
-mobile. Mobile's model menu labels the configured model **Orchestrator**; manage
-account sign-in and substitute order in the web or desktop provider settings.
-Substitutes retain the selected model; switching between Codex and Claude does
-not preserve their native conversations and is not used for automatic fallback.
+- **Same account and model** (the default): the selected model plans, builds, and
+  verifies in the same conversation. T3 changes accounts automatically only when
+  that model reaches a usage limit, following the configured substitute order.
+- **Separate worker accounts**: the selected chat model orchestrates. Select which
+  accounts it may assign development work to. It chooses available models for those
+  workers, reads their results, and integrates the work. Workers share the project's
+  working directory. Each worker uses its own account's configured usage-limit fallback.
+
+For Codex-only work, choose a Codex chat model and either use **Same account and model**
+or select only Codex worker accounts. Selecting Claude for orchestration and Codex
+workers keeps their conversations separate while the orchestrator coordinates results.
+The orchestrator decides when delegation is useful; it does not send every task to
+all selected accounts.
+
+These choices belong to the thread and are available on web, desktop, and mobile.
+Change them between turns. Your conversation stays intact when changing the working
+mode. Existing threads default to **Same account and model**; the former project and
+global orchestrator settings no longer control delegation.
+Manage subscription sign-in and substitute order in **Settings → Providers**.
+Substitutes retain the selected model and native conversation; automatic fallback
+never switches between Codex and Claude.
 
 ## Answer questions while Codex works
 

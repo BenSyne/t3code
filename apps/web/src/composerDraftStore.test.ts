@@ -194,6 +194,56 @@ describe("composerDraftStore assistant citations", () => {
   beforeEach(resetComposerDraftStore);
   afterEach(resetComposerDraftStore);
 
+  it("follows the server account after sending while preserving later model edits", () => {
+    const threadId = ThreadId.make("submitted-model");
+    const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+    const selection = { instanceId: ProviderInstanceId.make("codex"), model: "astra-test" };
+    useComposerDraftStore.getState().setModelSelection(threadRef, selection, { explicit: true });
+    const submitted = useComposerDraftStore.getState().getComposerDraft(threadRef);
+    useComposerDraftStore.getState().clearComposerContent(threadRef);
+    useComposerDraftStore.getState().consumeModelSelection(threadRef, submitted);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.activeProvider ?? null).toBeNull();
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider ?? {}).toEqual({});
+    useComposerDraftStore.getState().setModelSelection(threadRef, selection, { explicit: true });
+    const second = useComposerDraftStore.getState().getComposerDraft(threadRef);
+    useComposerDraftStore
+      .getState()
+      .setModelSelection(threadRef, { ...selection, model: "another-model" }, { explicit: true });
+    useComposerDraftStore.getState().consumeModelSelection(threadRef, second);
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[selection.instanceId]
+        ?.model,
+    ).toBe("another-model");
+  });
+
+  it("restores thread working accounts without inheriting them into another draft", async () => {
+    await useComposerDraftStore.persist.clearStorage();
+    vi.useFakeTimers();
+    try {
+      const threadId = ThreadId.make("working-accounts-draft");
+      const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+      const orchestration = {
+        mode: "delegated" as const,
+        workerAccountIds: [ProviderInstanceId.make("codex")],
+      };
+      useComposerDraftStore.getState().setOrchestration(threadRef, orchestration);
+      await vi.advanceTimersByTimeAsync(300);
+      resetComposerDraftStore();
+      await useComposerDraftStore.persist.rehydrate();
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.orchestration).toEqual(orchestration);
+      expect(
+        draftFor(ThreadId.make("other-draft"), TEST_ENVIRONMENT_ID)?.orchestration,
+      ).toBeUndefined();
+      useComposerDraftStore
+        .getState()
+        .setOrchestration(threadRef, { ...orchestration, mode: "same-account" });
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.orchestration?.mode).toBe("same-account");
+    } finally {
+      await useComposerDraftStore.persist.clearStorage();
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps quotes, comments, and remote source IDs through persistence and removes them on clear", async () => {
     await useComposerDraftStore.persist.clearStorage();
     vi.useFakeTimers();
