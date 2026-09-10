@@ -112,8 +112,7 @@ function SubscriptionSignIn({
       <p role="status" className="text-xs text-muted-foreground">
         {active || auth?.phase === "failed"
           ? auth.message
-          : (provider.auth.email ??
-            provider.auth.label ??
+          : (provider.auth.label ??
             (provider.auth.status === "authenticated" ? "Signed in" : "Connect your subscription"))}
       </p>
       <div className="flex flex-wrap gap-2">
