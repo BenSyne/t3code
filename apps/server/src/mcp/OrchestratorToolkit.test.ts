@@ -10,10 +10,11 @@ import {
   type OrchestrationThreadShell,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Context from "effect/Context";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import { McpServer, Tool } from "effect/unstable/ai";
+import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { makeProviderRegistryLayer } from "../provider/testUtils/providerRegistryMock.ts";
@@ -90,7 +91,34 @@ it.effect(
       Layer.provide(NodeServices.layer),
     );
     return Effect.gen(function* () {
-      yield* Effect.scoped(Layer.build(McpServer.toolkit(OrchestratorToolkit)));
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const registered = yield* Layer.build(
+            McpServer.toolkit(OrchestratorToolkit).pipe(
+              Layer.provideMerge(McpServer.McpServer.layer),
+            ),
+          );
+          const server = Context.get(registered, McpServer.McpServer);
+          const response = yield* server.callTool({ name: "t3_accounts", arguments: {} }).pipe(
+            Effect.provideService(McpSchema.McpServerClient, {
+              clientId: 1,
+              clientCapabilities: {},
+              clientInfo: { name: "codex-test", version: "1" },
+              protocolVersion: "2025-06-18",
+              initializePayload: {
+                protocolVersion: "2025-06-18",
+                capabilities: {},
+                clientInfo: { name: "codex-test", version: "1" },
+              },
+              getClient: Effect.die("unused"),
+            }),
+          );
+          expect(response.isError).not.toBe(true);
+          expect(response.structuredContent).toMatchObject({
+            accounts: [{ instanceId: workerAccount, models: [{ id: "astra-test" }] }],
+          });
+        }),
+      );
       expect(Tool.getJsonSchema(OrchestratorToolkit.tools.t3_delegate)).toMatchObject({
         properties: {
           modelSelection: {

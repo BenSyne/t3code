@@ -23,7 +23,7 @@ class OrchestratorToolError extends Schema.TaggedError<OrchestratorToolError>()(
 const isOrchestratorToolError = Schema.is(OrchestratorToolError);
 
 const options = {
-  success: Schema.Unknown,
+  success: Schema.Record(Schema.String, Schema.Unknown),
   failure: OrchestratorToolError,
   failureMode: "return" as const,
   dependencies: [McpInvocationContext],
@@ -138,15 +138,16 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
         protect(
           Effect.gen(function* () {
             yield* authorize();
-            return (yield* providers.getProviders)
+            const accounts = (yield* providers.getProviders)
               .filter((provider) => provider.enabled && provider.installed)
               .map((provider) => ({
                 instanceId: provider.instanceId,
-                name: provider.displayName,
+                name: provider.displayName ?? provider.driver,
                 provider: provider.driver,
                 auth: provider.auth.status,
                 models: provider.models.map((model) => ({ id: model.slug, name: model.name })),
               }));
+            return { accounts };
           }),
         ),
       t3_tasks: () =>
@@ -154,7 +155,7 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
           Effect.gen(function* () {
             const owner = yield* authorize();
             const snapshot = yield* query.getShellSnapshot();
-            return snapshot.threads
+            const tasks = snapshot.threads
               .filter((thread) => thread.projectId === owner.projectId)
               .map((thread) => ({
                 threadId: thread.id,
@@ -163,6 +164,7 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
                 status: thread.session?.status ?? "idle",
                 latestTurn: thread.latestTurn,
               }));
+            return { tasks };
           }),
         ),
       t3_delegate: (input) =>
