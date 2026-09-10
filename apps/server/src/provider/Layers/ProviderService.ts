@@ -36,7 +36,10 @@ import {
 import { expandAssistantCitationsForProvider } from "@t3tools/shared/assistantCitations";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
-import { resolveProjectAgentBrowserAccess } from "@t3tools/shared/serverSettings";
+import {
+  isOrchestratorSelection,
+  resolveProjectAgentBrowserAccess,
+} from "@t3tools/shared/serverSettings";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -891,7 +894,20 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
-      if (!(yield* agentBrowserAccessEnabled(threadId))) {
+      const capabilities: Array<"preview" | "orchestration"> = [];
+      if (yield* agentBrowserAccessEnabled(threadId)) capabilities.push("preview");
+      const settings = yield* serverSettings.getSettings.pipe(
+        Effect.catch(() => Effect.succeed(undefined)),
+      );
+      if (
+        settings?.orchestratorModelSelection &&
+        isOrchestratorSelection(settings, {
+          ...settings.orchestratorModelSelection,
+          instanceId: providerInstanceId,
+        })
+      )
+        capabilities.push("orchestration");
+      if (capabilities.length === 0) {
         // Revoke as well as clear. Every other prepare path reaches
         // `issueActiveMcpCredential`, which revokes the thread first, so
         // skipping it here would leave a previously issued bearer token valid
@@ -902,7 +918,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         yield* Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId));
         return undefined;
       }
-      const credential = yield* issueMcpCredential({ threadId, providerInstanceId });
+      const credential = yield* issueMcpCredential({ threadId, providerInstanceId, capabilities });
       if (credential) {
         yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
       }
@@ -1576,6 +1592,18 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       );
     }
 
+    const orchestrationSettings = yield* serverSettings.getSettings.pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+    if (
+      orchestrationSettings &&
+      parsed.modelSelection &&
+      isOrchestratorSelection(orchestrationSettings, parsed.modelSelection)
+    ) {
+      appendAttachmentContext(
+        "You are the T3 Code orchestrator for this project. Use the t3_accounts, t3_tasks, t3_delegate, t3_read_task, and t3_message_task MCP tools to coordinate work when useful. Choose worker accounts and models from t3_accounts. Give each worker a concrete bounded task, inspect results, and integrate and verify the work before reporting completion. Workers share this project's working directory; avoid overlapping edits. Preserve the user's constraints and ask before destructive actions. Keep your own conversation as the durable record of the plan and worker task IDs. Never claim a worker finished without reading its result.",
+      );
+    }
     const input = {
       ...parsed,
       ...(inputTextWithAttachmentContext !== undefined

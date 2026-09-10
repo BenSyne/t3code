@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ProviderInstanceId, type ModelSelection, type ServerConfig } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderInstanceId,
+  type ModelSelection,
+  type ServerConfig,
+} from "@t3tools/contracts";
 
 import {
   buildModelOptions,
@@ -51,6 +56,20 @@ describe("mobile model options", () => {
           { key: "codex:gpt-5.4", label: "GPT-5.4", isLegacy: true },
         ],
       },
+    ]);
+    const orchestratorConfig = {
+      ...config,
+      settings: {
+        ...DEFAULT_SERVER_SETTINGS,
+        orchestratorModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6-sol",
+        },
+      },
+    };
+    expect(buildModelOptions(orchestratorConfig, null).map((option) => option.subtitle)).toEqual([
+      "Orchestrator",
+      "",
     ]);
   });
 

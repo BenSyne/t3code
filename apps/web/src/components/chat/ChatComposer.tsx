@@ -4188,6 +4188,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onOpenChange={setIsComposerModelPickerOpen}
         getModelDisabledReason={getModelDisabledReason}
         onInstanceModelChange={onProviderModelSelect}
+        orchestratorModelSelection={settings.orchestratorModelSelection}
         onOpenProviderSetup={onOpenProviderSetup}
       />
 

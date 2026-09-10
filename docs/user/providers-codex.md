@@ -6,6 +6,22 @@ and custom binaries or environment variables.
 
 ## Use multiple accounts
 
+In **Settings > Providers > Subscription accounts**, choose your main Codex
+account, enter a distinct name, and select **Add subscription**. Sign in to the
+new account using the displayed device code. T3 Code prepares its private login
+directory and shares conversation storage with the main account. The accounts
+and credentials belong to the connected environment, including when you connect
+remotely.
+
+New accounts become substitutes for the selected main account. Reorder them,
+change the main account, or remove an account from the substitute list in the
+same section. A confirmed usage limit switches to the next available account
+with the same model and saved conversation. Network errors do not trigger a
+switch. When every substitute is exhausted or unavailable, the task stops with
+its conversation saved. The activity log records each switch or skipped account.
+
+The following manual setup remains available for existing account directories.
+
 A shared Codex home with a shadow home lets work and personal accounts continue
 the same threads. The accounts share Codex sessions and configuration while keeping
 their own login and available models.
@@ -48,6 +64,21 @@ settings. If two instances show the same unexpected account or models, check the
 reported accounts, refresh provider status, and confirm the second instance has
 its own shadow path and login. A shadow-home conflict usually means the directory
 contains a copied Codex setup. Use a fresh shadow directory and sign in again.
+
+## Use a subscription as the orchestrator
+
+In **Settings > Providers > Subscription orchestrator**, select an account and a
+model offered by that account. Choose **Use orchestrator** in a new task's model
+picker, or make it the default for new tasks. The selected subscription runs the
+orchestrator and can delegate work to other connected providers in the project.
+Workers share the task's working directory. Configure orchestration before
+starting a new task so its tools are attached when the provider session starts.
+
+The same selection and automatic account continuation work on web, desktop, and
+mobile. Mobile's model menu labels the configured model **Orchestrator**; manage
+account sign-in and substitute order in the web or desktop provider settings.
+Substitutes retain the selected model; switching between Codex and Claude does
+not preserve their native conversations and is not used for automatic fallback.
 
 ## Answer questions while Codex works
 

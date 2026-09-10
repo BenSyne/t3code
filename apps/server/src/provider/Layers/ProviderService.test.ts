@@ -4798,12 +4798,14 @@ const decodeBrowserAccessThreadShell = Schema.decodeUnknownEffect(OrchestrationT
 
 describe("agent browser access", () => {
   const revokedThreads: Array<ThreadId> = [];
+  const issuedCapabilities: Array<ReadonlyArray<string>> = [];
   const projectId = ProjectId.make("project-browser-access");
 
   const startSessionWith = (
     enableAgentBrowserAccess: boolean,
     threadId: ThreadId,
     projectOverride?: boolean,
+    orchestration = false,
   ) =>
     Effect.gen(function* () {
       const issued: Array<ThreadId> = [];
@@ -4866,6 +4868,7 @@ describe("agent browser access", () => {
         issueMcpCredential: (request) =>
           Effect.sync(() => {
             issued.push(request.threadId);
+            issuedCapabilities.push(request.capabilities ?? ["preview"]);
             return undefined;
           }),
         revokeMcpCredential: (revoked) => Effect.sync(() => void revokedThreads.push(revoked)),
@@ -4876,6 +4879,9 @@ describe("agent browser access", () => {
         Layer.provide(
           ServerSettings.ServerSettingsService.layerTest({
             enableAgentBrowserAccess,
+            ...(orchestration
+              ? { orchestratorModelSelection: { instanceId: codexInstanceId, model: "astra-test" } }
+              : {}),
             projectAgentBrowserAccessOverrides:
               projectOverride === undefined ? {} : { [projectId]: projectOverride },
           }),
@@ -4911,6 +4917,16 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith(false, asThreadId("thread-browser-off"));
 
       assert.deepEqual(issued, []);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("grants orchestration tools independently of disabled browser access", () =>
+    Effect.gen(function* () {
+      issuedCapabilities.length = 0;
+      const threadId = asThreadId("thread-orchestrator-browser-off");
+      const issued = yield* startSessionWith(false, threadId, undefined, true);
+      assert.deepEqual(issued, [threadId]);
+      assert.deepEqual(issuedCapabilities, [["orchestration"]]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

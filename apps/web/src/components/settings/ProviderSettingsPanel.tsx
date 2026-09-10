@@ -79,6 +79,8 @@ import { ExpandableText } from "./ExpandableText";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
+import { SubscriptionSettings } from "./SubscriptionSettings";
+import { removeSubscriptionAccountReferences } from "@t3tools/shared/serverSettings";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
 import {
@@ -802,6 +804,7 @@ export function EnvironmentProviderSettings({
   const deleteProviderInstance = (id: ProviderInstanceId) => {
     updateSettings({
       providerInstances: withoutProviderInstanceKey(settings.providerInstances, id),
+      ...removeSubscriptionAccountReferences(settings, id),
     });
   };
 
@@ -1147,6 +1150,11 @@ export function EnvironmentProviderSettings({
         />
       </SettingsSection>
 
+      <SubscriptionSettings
+        environmentId={environmentId}
+        providers={serverProviders}
+        readOnly={readOnly}
+      />
       {isAddInstanceDialogOpen ? (
         <AddProviderInstanceDialog
           open

@@ -7,6 +7,7 @@ import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
+import { isOrchestratorSelection } from "@t3tools/shared/serverSettings";
 
 export type ModelOption = {
   readonly key: string;
@@ -169,7 +170,14 @@ export function buildModelOptions(
       options.set(key, {
         key,
         label: model.name,
-        subtitle: model.subProvider ?? "",
+        subtitle:
+          config?.settings &&
+          isOrchestratorSelection(config.settings, {
+            instanceId: provider.instanceId,
+            model: model.slug,
+          })
+            ? "Orchestrator"
+            : (model.subProvider ?? ""),
         providerKey: provider.instanceId,
         providerLabel,
         providerDriver: provider.driver,

@@ -318,6 +318,8 @@ describe("EnvironmentProviderSettings routing", () => {
         [customId]: { hiddenModels: ["hidden"], modelOrder: ["model"] },
       },
       favorites: [{ provider: customId, model: "favorite" }],
+      providerAccountFallbacks: { [codexId]: [customId] },
+      orchestratorModelSelection: { instanceId: customId, model: "selected-model" },
     };
     let panel = renderPanel();
     const customRow = visitElements(
@@ -337,6 +339,8 @@ describe("EnvironmentProviderSettings routing", () => {
       providerInstances: {
         [codexId]: settingsState.value.providerInstances?.[codexId],
       },
+      providerAccountFallbacks: { [codexId]: [] },
+      orchestratorModelSelection: null,
     });
 
     settingsState.updateSettings.mockClear();

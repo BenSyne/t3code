@@ -6,6 +6,18 @@ shared provider settings.
 
 ## Separate accounts or configurations
 
+For subscription accounts, use **Settings > Providers > Subscription accounts**.
+Choose your main Claude account, give the new account a distinct name, and select
+**Add subscription**, then **Sign in**. Each account keeps its own login while
+sharing the main account's conversation storage. You can reorder substitutes or
+choose a different main account after signing in.
+
+Select a Claude account and one of its available models under **Subscription
+orchestrator** to run orchestration through that subscription. Start a new task
+with that account and model. See [subscription orchestration](./providers-codex.md#use-a-subscription-as-the-orchestrator).
+
+For manually configured directories:
+
 Use a separate Claude config directory for each account. This also works for named
 presets that need different Claude settings or a router connection.
 
@@ -30,9 +42,11 @@ location intact. Use the same variable for the login command. Setting `HOME`
 instead can put credentials where this provider will not find them.
 
 Check the account reported in provider settings after signing in. Existing
-threads can switch only between Claude instances with the same config directory.
-Separate account directories stay isolated, including their local conversation
-state. Claude does not have Codex's shared-home and shadow-home arrangement.
+threads can switch between Claude instances with the same conversation storage.
+Set **Shared conversation directory** to the main account's config directory to
+share saved conversations with a new account directory. Existing independent
+history is never overwritten; use a fresh directory for the new account. Leave
+this setting empty to keep an account's history separate.
 
 For presets that differ only in API keys or endpoints, use the instance's
 **Environment variables**. Variable assignments do not belong in **Launch arguments**.
@@ -57,6 +71,9 @@ for using composer commands.
 
 If your Claude subscription runs out of usage mid-turn, the thread shows which
 limit was reached and the remaining wait when Claude provides a reset time.
+With configured substitutes, T3 Code closes the limited account's turn and resumes
+the saved conversation on the next compatible account with the same model. If all
+substitutes are unavailable, it stops and records the reason. Without substitutes,
 Claude Code holds the turn until that window reopens, so it can keep showing as
 working. Wait for the reset, or stop the turn and continue later. The warning's
 timestamp shows when the displayed wait started.
