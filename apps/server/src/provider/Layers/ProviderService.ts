@@ -36,11 +36,7 @@ import {
 import { expandAssistantCitationsForProvider } from "@t3tools/shared/assistantCitations";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
-import {
-  isOrchestratorSelection,
-  isProjectProviderAccountAllowed,
-  resolveProjectAgentBrowserAccess,
-} from "@t3tools/shared/serverSettings";
+import { resolveProjectAgentBrowserAccess } from "@t3tools/shared/serverSettings";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -893,55 +889,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     ),
   );
 
-  const requireProjectAccount = Effect.fn("ProviderService.requireProjectAccount")(function* (
+  const threadOrchestration = Effect.fn("ProviderService.threadOrchestration")(function* (
     threadId: ThreadId,
-    instanceId: ProviderInstanceId,
   ) {
-    const settings = yield* serverSettings.getSettings.pipe(
-      Effect.mapError(() =>
-        toValidationError(
-          "ProviderService.projectAccount",
-          "Could not read project provider settings.",
-        ),
-      ),
-    );
-    if (Object.keys(settings.projectProviderAccounts).length === 0) return;
-    const thread = Option.isSome(projectionQuery)
-      ? yield* projectionQuery.value
-          .getThreadShellById(threadId)
-          .pipe(
-            Effect.mapError(() =>
-              toValidationError(
-                "ProviderService.projectAccount",
-                "Could not read the task's project.",
-              ),
-            ),
-          )
-      : Option.none();
-    if (
-      Option.isNone(thread) ||
-      !isProjectProviderAccountAllowed(settings, thread.value.projectId, instanceId)
-    )
-      return yield* toValidationError(
-        "ProviderService.projectAccount",
-        "This account is not allowed in this project. Change the project's provider accounts in Settings → Projects before continuing.",
-      );
+    if (Option.isNone(projectionQuery)) return undefined;
+    const thread = yield* projectionQuery.value
+      .getThreadShellById(threadId)
+      .pipe(Effect.catch(() => Effect.succeed(Option.none())));
+    return Option.isSome(thread) ? thread.value.orchestration : undefined;
   });
 
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
       const capabilities: Array<"preview" | "orchestration"> = [];
       if (yield* agentBrowserAccessEnabled(threadId)) capabilities.push("preview");
-      const settings = yield* serverSettings.getSettings.pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
-      );
-      if (
-        settings?.orchestratorModelSelection &&
-        isOrchestratorSelection(settings, {
-          ...settings.orchestratorModelSelection,
-          instanceId: providerInstanceId,
-        })
-      )
+      if ((yield* threadOrchestration(threadId))?.mode === "delegated")
         capabilities.push("orchestration");
       if (capabilities.length === 0) {
         // Revoke as well as clear. Every other prepare path reaches
@@ -1203,7 +1165,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     readonly operation: string;
   }) {
     const bindingInstanceId = yield* requireBindingInstanceId(input.operation, input.binding);
-    yield* requireProjectAccount(input.binding.threadId, bindingInstanceId);
+
     yield* Effect.annotateCurrentSpan({
       "provider.operation": "recover-session",
       "provider.kind": input.binding.provider,
@@ -1381,7 +1343,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         "ProviderService.startSession",
         parsed,
       );
-      yield* requireProjectAccount(threadId, resolvedInstanceId);
+
       let metricProvider = parsed.provider ?? String(resolvedInstanceId);
       yield* Effect.annotateCurrentSpan({
         "provider.operation": "start-session",
@@ -1630,18 +1592,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       );
     }
 
-    const orchestrationSettings = yield* serverSettings.getSettings.pipe(
-      Effect.catch(() => Effect.succeed(undefined)),
-    );
-    if (
-      orchestrationSettings &&
-      parsed.modelSelection &&
-      isOrchestratorSelection(orchestrationSettings, parsed.modelSelection)
-    ) {
+    const orchestration = yield* threadOrchestration(parsed.threadId);
+    if (orchestration)
       appendAttachmentContext(
-        "You are the T3 Code orchestrator for this project. Use the t3_accounts, t3_tasks, t3_delegate, t3_read_task, and t3_message_task MCP tools to coordinate work when useful. Choose worker accounts and models from t3_accounts. Give each worker a concrete bounded task, inspect results, and integrate and verify the work before reporting completion. Workers share this project's working directory; avoid overlapping edits. Preserve the user's constraints and ask before destructive actions. Keep your own conversation as the durable record of the plan and worker task IDs. Never claim a worker finished without reading its result.",
+        orchestration.mode === "delegated"
+          ? "You are the T3 Code orchestrator for this thread. Use the t3_accounts, t3_tasks, t3_delegate, t3_read_task, and t3_message_task MCP tools to coordinate work when useful. Choose worker accounts and models from t3_accounts; only accounts selected for this thread may receive work. Give each worker a concrete bounded task, inspect results, and integrate and verify the work before reporting completion. Workers share this project's working directory; avoid overlapping edits. Preserve the user's constraints and ask before destructive actions. Keep your own conversation as the durable record of the plan and worker task IDs. Never claim a worker finished without reading its result."
+          : "This T3 Code thread uses the same account and model for orchestration and development. Plan, implement, and verify the work in this conversation. Do not delegate work to other T3 accounts. T3 handles switching to configured substitute accounts only when the selected model reaches a usage limit.",
       );
-    }
     const input = {
       ...parsed,
       ...(inputTextWithAttachmentContext !== undefined
@@ -1662,7 +1619,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         operation: "ProviderService.sendTurn",
         allowRecovery: false,
       });
-      yield* requireProjectAccount(input.threadId, routed.instanceId);
+
       if (
         input.continuation === true &&
         !input.input &&

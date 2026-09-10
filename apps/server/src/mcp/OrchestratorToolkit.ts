@@ -1,8 +1,11 @@
-import { CommandId, MessageId, ModelSelection, ThreadId } from "@t3tools/contracts";
 import {
-  isOrchestratorSelection,
-  isProjectProviderAccountAllowed,
-} from "@t3tools/shared/serverSettings";
+  CommandId,
+  MessageId,
+  ModelSelection,
+  ThreadId,
+  DEFAULT_THREAD_ORCHESTRATION,
+} from "@t3tools/contracts";
+import { isThreadWorkerAccountAllowed } from "@t3tools/shared/serverSettings";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -35,7 +38,7 @@ export const OrchestratorToolkit = Toolkit.make(
   Tool.make("t3_accounts", {
     ...options,
     description:
-      "List the accounts allowed in this project and their available model IDs. Use the returned IDs when delegating.",
+      "List the worker accounts selected for this thread and their available model IDs. Use the returned IDs when delegating.",
     parameters: Schema.Record(Schema.String, Schema.Never),
   }).annotate(Tool.Readonly, true),
   Tool.make("t3_tasks", {
@@ -100,19 +103,13 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
       if (!invocation.capabilities.has("orchestration"))
         return yield* fail("Orchestration access is not enabled for this session.");
       const thread = yield* query.getThreadShellById(invocation.threadId);
-      const currentSettings = yield* settings.getSettings;
       if (
         Option.isNone(thread) ||
         invocation.providerInstanceId !== thread.value.modelSelection.instanceId ||
-        !isOrchestratorSelection(currentSettings, thread.value.modelSelection) ||
-        !isProjectProviderAccountAllowed(
-          currentSettings,
-          thread.value.projectId,
-          invocation.providerInstanceId,
-        )
+        thread.value.orchestration?.mode !== "delegated"
       ) {
         return yield* fail(
-          "This session is not the configured orchestrator. Start a task with the orchestrator account and model.",
+          "Delegation is not enabled for this thread. Select separate worker accounts in the chat controls.",
         );
       }
       return thread.value;
@@ -152,10 +149,10 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
                 (provider) =>
                   provider.enabled &&
                   provider.installed &&
-                  isProjectProviderAccountAllowed(
-                    currentSettings,
-                    owner.projectId,
+                  isThreadWorkerAccountAllowed(
+                    owner.orchestration,
                     provider.instanceId,
+                    currentSettings,
                   ),
               )
               .map((provider) => ({
@@ -190,14 +187,14 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
           Effect.gen(function* () {
             const owner = yield* authorize();
             if (
-              !isProjectProviderAccountAllowed(
-                yield* settings.getSettings,
-                owner.projectId,
+              !isThreadWorkerAccountAllowed(
+                owner.orchestration,
                 input.modelSelection.instanceId,
+                yield* settings.getSettings,
               )
             )
               return yield* fail(
-                "This account is not allowed in this project. Change the project's provider accounts in Settings → Projects.",
+                "This account is not selected as a worker for this thread. Change Working accounts in the chat controls.",
               );
             const account = (yield* providers.getProviders).find(
               (provider) => provider.instanceId === input.modelSelection.instanceId,
@@ -221,6 +218,7 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
               threadId,
               projectId: owner.projectId,
               title: input.title,
+              orchestration: DEFAULT_THREAD_ORCHESTRATION,
               modelSelection: input.modelSelection,
               runtimeMode: owner.runtimeMode,
               interactionMode: owner.interactionMode,
@@ -308,14 +306,15 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
               });
             } else {
               if (
-                !isProjectProviderAccountAllowed(
-                  yield* settings.getSettings,
-                  target.projectId,
+                !isThreadWorkerAccountAllowed(
+                  owner.orchestration,
                   target.modelSelection.instanceId,
+                  yield* settings.getSettings,
+                  true,
                 )
               )
                 return yield* fail(
-                  "This task's account is no longer allowed in the project. Update the project's provider accounts before continuing it.",
+                  "This task's account is no longer selected for this thread. Update Working accounts before continuing it.",
                 );
               if (!input.prompt) return yield* fail("A follow-up prompt is required.");
               if (target.session?.status === "running" || target.session?.status === "starting") {

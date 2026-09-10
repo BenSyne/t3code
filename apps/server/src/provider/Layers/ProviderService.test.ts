@@ -4847,6 +4847,10 @@ describe("agent browser access", () => {
                 id: threadId,
                 projectId,
                 title: "Browser access test",
+                orchestration: {
+                  mode: orchestration ? "delegated" : "same-account",
+                  workerAccountIds: [],
+                },
                 modelSelection: createModelSelection(codexInstanceId, "gpt-5.4"),
                 runtimeMode: "full-access",
                 branch: null,
@@ -4919,7 +4923,7 @@ describe("agent browser access", () => {
       return issued;
     });
 
-  it.effect("rejects a native session when its account is excluded from the project", () =>
+  it.effect("ignores legacy project account restrictions for a direct thread", () =>
     Effect.gen(function* () {
       const result = yield* startSessionWith(
         false,
@@ -4927,12 +4931,12 @@ describe("agent browser access", () => {
         undefined,
         false,
         [],
-      ).pipe(Effect.flip);
-      assert.match(String(result), /not allowed in this project/);
+      );
+      assert.deepEqual(result, []);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("blocks the next turn after excluding an already-started account", () =>
+  it.effect("continues a direct thread after legacy project restrictions change", () =>
     Effect.gen(function* () {
       const result = yield* startSessionWith(
         false,
@@ -4941,8 +4945,8 @@ describe("agent browser access", () => {
         false,
         [codexInstanceId],
         true,
-      ).pipe(Effect.flip);
-      assert.match(String(result), /not allowed in this project/);
+      );
+      assert.deepEqual(result, []);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

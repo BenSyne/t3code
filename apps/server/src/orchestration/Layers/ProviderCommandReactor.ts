@@ -14,10 +14,7 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
-import {
-  providerAccountChain,
-  isProjectProviderAccountAllowed,
-} from "@t3tools/shared/serverSettings";
+import { providerAccountChain } from "@t3tools/shared/serverSettings";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -594,6 +591,7 @@ const make = Effect.gen(function* () {
     options?: {
       readonly modelSelection?: ModelSelection;
       readonly pendingTurnStart?: boolean;
+      readonly refreshOrchestration?: boolean;
     },
   ) {
     const thread = yield* resolveThreadShell(threadId);
@@ -799,6 +797,7 @@ const make = Effect.gen(function* () {
         !Equal.equals(previousModelSelection, requestedModelSelection);
 
       if (
+        !options?.refreshOrchestration &&
         !runtimeModeChanged &&
         !cwdChanged &&
         !instanceChanged &&
@@ -1767,19 +1766,6 @@ const make = Effect.gen(function* () {
     const providers = yield* providerRegistry.getProviders;
     for (const instanceId of remaining) {
       if (cancelled()) return;
-      if (
-        !isProjectProviderAccountAllowed(
-          yield* serverSettingsService.getSettings,
-          thread.projectId,
-          instanceId,
-        )
-      ) {
-        yield* report(
-          "Substitute account skipped",
-          `${instanceId} is not allowed in this project.`,
-        );
-        continue;
-      }
       const candidate = providers.find((provider) => provider.instanceId === instanceId);
       if (
         !candidate?.enabled ||
@@ -1892,9 +1878,18 @@ const make = Effect.gen(function* () {
       case "thread.activity-appended":
         yield* processAccountExhausted(event);
         return;
-      case "thread.meta-updated":
-        yield* threadTitleRegenerationWorker.enqueue(event);
+      case "thread.meta-updated": {
+        if (event.payload.regenerateTitle) yield* threadTitleRegenerationWorker.enqueue(event);
+        if (event.payload.orchestrationModeChanged) {
+          const thread = yield* resolveThreadShell(event.payload.threadId);
+          if (thread?.session && thread.session.status !== "stopped") {
+            yield* ensureSessionForThread(event.payload.threadId, event.occurredAt, {
+              refreshOrchestration: true,
+            });
+          }
+        }
         return;
+      }
       case "thread.runtime-mode-set": {
         const thread = yield* resolveThreadShell(event.payload.threadId);
         if (!thread?.session || thread.session.status === "stopped") {
@@ -1978,7 +1973,8 @@ const make = Effect.gen(function* () {
         event.type === "thread.settled" ||
         event.type === "thread.turn-start-requested" ||
         (event.type === "thread.meta-updated" &&
-          event.payload.modelSelection !== undefined &&
+          (event.payload.modelSelection !== undefined ||
+            event.payload.orchestration !== undefined) &&
           !event.commandId?.startsWith("account-fallback:"))
       ) {
         fallbackVersions.set(
@@ -1989,7 +1985,8 @@ const make = Effect.gen(function* () {
       if (
         (event.type === "thread.activity-appended" &&
           isUsageLimitPayload(event.payload.activity.payload)) ||
-        (event.type === "thread.meta-updated" && event.payload.regenerateTitle === true) ||
+        (event.type === "thread.meta-updated" &&
+          (event.payload.regenerateTitle === true || event.payload.orchestration !== undefined)) ||
         event.type === "thread.runtime-mode-set" ||
         event.type === "thread.turn-start-requested" ||
         event.type === "thread.turn-interrupt-requested" ||

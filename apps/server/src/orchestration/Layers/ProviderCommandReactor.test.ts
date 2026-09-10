@@ -155,16 +155,15 @@ describe("ProviderCommandReactor", () => {
         const backup = ProviderInstanceId.make("codex_backup");
         const last = ProviderInstanceId.make("codex_last");
         const wrongModel = ProviderInstanceId.make("codex_other_model");
-        const excluded = ProviderInstanceId.make("codex_excluded");
         const firstSent = yield* Deferred.make<void>();
         const secondSent = yield* Deferred.make<void>();
         const stopped = yield* Deferred.make<void>();
         let sendCount = 0;
         const harness = yield* Effect.promise(() =>
           createHarness({
-            accountFallbacks: { [main]: [excluded, wrongModel, backup, last] },
+            accountFallbacks: { [main]: [wrongModel, backup, last] },
             projectAccounts: { [ProjectId.make("project-1")]: [main, wrongModel, backup, last] },
-            providers: [excluded, backup, last, wrongModel].map((instanceId) => ({
+            providers: [backup, last, wrongModel].map((instanceId) => ({
               instanceId,
               driver: ProviderDriverKind.make("codex"),
               enabled: true,
@@ -358,6 +357,98 @@ describe("ProviderCommandReactor", () => {
       expect(harness.sendTurn).not.toHaveBeenCalled();
       expect(harness.runtimeSessions).toEqual([]);
     }),
+  );
+
+  effectIt.effect(
+    "persists thread working accounts and refreshes tools with the same native conversation",
+    () =>
+      Effect.gen(function* () {
+        const enabled = yield* Deferred.make<void>();
+        const disabled = yield* Deferred.make<void>();
+        let starts = 0;
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            startSessionEffect: (session) =>
+              Deferred.succeed(++starts === 1 ? enabled : disabled, undefined).pipe(
+                Effect.as(session),
+              ),
+          }),
+        );
+        const threadId = ThreadId.make("thread-1");
+        const main = ProviderInstanceId.make("codex");
+        const now = "2026-01-01T00:00:00.000Z";
+        const cursor = { threadId: "same-conversation-across-modes" };
+        harness.runtimeSessions.push({
+          threadId,
+          providerInstanceId: main,
+          provider: ProviderDriverKind.make("codex"),
+          status: "ready",
+          runtimeMode: "approval-required",
+          resumeCursor: cursor,
+          model: "gpt-5-codex",
+          createdAt: now,
+          updatedAt: now,
+        });
+        const session = {
+          threadId,
+          providerInstanceId: main,
+          providerName: "codex",
+          status: "ready" as const,
+          runtimeMode: "approval-required" as const,
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: now,
+        };
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("seed-working-accounts"),
+          threadId,
+          createdAt: now,
+          session,
+        });
+        for (const mode of ["delegated", "same-account"] as const) {
+          const orchestration = {
+            mode,
+            workerAccountIds: [ProviderInstanceId.make("claudeAgent")],
+          };
+          yield* harness.engine.dispatch({
+            type: "thread.meta.update",
+            commandId: CommandId.make(`working-accounts-${mode}`),
+            threadId,
+            orchestration,
+          });
+          yield* Deferred.await(mode === "delegated" ? enabled : disabled);
+          yield* Effect.promise(() => harness.drain());
+          const snapshot = yield* Effect.promise(() => harness.readModel());
+          expect(snapshot.threads[0]?.orchestration).toEqual(orchestration);
+          const shell = yield* harness.snapshotQuery.getThreadShellById(threadId);
+          expect(Option.getOrThrow(shell).orchestration).toEqual(orchestration);
+          const detail = yield* harness.snapshotQuery.getThreadDetailById(threadId);
+          expect(Option.getOrThrow(detail).orchestration).toEqual(orchestration);
+          expect(harness.startSession.mock.lastCall?.[1]).toMatchObject({
+            resumeCursor: cursor,
+            providerInstanceId: main,
+            modelSelection: { instanceId: main, model: "gpt-5-codex" },
+          });
+        }
+        expect(harness.sendTurn).not.toHaveBeenCalled();
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("running-working-accounts"),
+          threadId,
+          createdAt: now,
+          session: { ...session, status: "running" },
+        });
+        const rejected = yield* harness.engine
+          .dispatch({
+            type: "thread.meta.update",
+            commandId: CommandId.make("busy-working-accounts"),
+            threadId,
+            orchestration: { mode: "delegated", workerAccountIds: [] },
+          })
+          .pipe(Effect.flip);
+        expect(String(rejected)).toContain("Wait for the current turn");
+      }),
   );
 
   describe("provider error attribution", () => {

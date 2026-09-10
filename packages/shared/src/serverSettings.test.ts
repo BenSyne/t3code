@@ -15,6 +15,7 @@ import {
   applyServerSettingsPatch,
   providerAccountChain,
   isOrchestratorSelection,
+  isThreadWorkerAccountAllowed,
   isProjectProviderAccountAllowed,
   validateProviderAccountFallbacks,
   createSubscriptionAccountPatch,
@@ -27,6 +28,30 @@ import {
 } from "./serverSettings.ts";
 
 describe("serverSettings helpers", () => {
+  it("limits assignments to this thread and permits substitutes only for continued workers", () => {
+    const main = ProviderInstanceId.make("codex");
+    const backup = ProviderInstanceId.make("codex_backup");
+    const claude = ProviderInstanceId.make("claudeAgent");
+    const settings = { providerAccountFallbacks: { [main]: [backup] } };
+    const delegated = { mode: "delegated" as const, workerAccountIds: [main] };
+    expect(isThreadWorkerAccountAllowed(delegated, main, settings)).toBe(true);
+    expect(isThreadWorkerAccountAllowed(delegated, backup, settings)).toBe(false);
+    expect(isThreadWorkerAccountAllowed(delegated, backup, settings, true)).toBe(true);
+    expect(isThreadWorkerAccountAllowed(delegated, claude, settings, true)).toBe(false);
+    expect(
+      isThreadWorkerAccountAllowed({ ...delegated, mode: "same-account" }, main, settings, true),
+    ).toBe(false);
+    expect(isThreadWorkerAccountAllowed(undefined, main, settings, true)).toBe(false);
+    expect(
+      isThreadWorkerAccountAllowed(
+        { mode: "delegated", workerAccountIds: [backup] },
+        main,
+        settings,
+        true,
+      ),
+    ).toBe(false);
+  });
+
   it("adds isolated accounts in order while retaining the selected orchestrator model", () => {
     const primaryId = ProviderInstanceId.make("codex");
     const first = ProviderInstanceId.make("codex_backup_1");

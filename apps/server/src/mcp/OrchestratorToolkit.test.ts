@@ -7,6 +7,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   type OrchestrationCommand,
+  DEFAULT_THREAD_ORCHESTRATION,
   type OrchestrationThreadShell,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -25,15 +26,28 @@ import { OrchestratorToolkit, OrchestratorToolkitHandlersLive } from "./Orchestr
 const account = ProviderInstanceId.make("claude_main");
 const workerAccount = ProviderInstanceId.make("codex_backup");
 const selection = { instanceId: account, model: "fable-test" };
-const owner = {
+const owner: OrchestrationThreadShell = {
   id: ThreadId.make("orchestrator"),
   projectId: ProjectId.make("project"),
   modelSelection: selection,
+  orchestration: { mode: "delegated", workerAccountIds: [workerAccount] },
   runtimeMode: "approval-required",
   interactionMode: "default",
   branch: null,
   worktreePath: null,
-} as OrchestrationThreadShell;
+  title: "Orchestrator test",
+  latestTurn: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  archivedAt: null,
+  settledOverride: null,
+  settledAt: null,
+  session: null,
+  latestUserMessageAt: null,
+  hasPendingApprovals: false,
+  hasPendingUserInput: false,
+  hasActionableProposedPlan: false,
+};
 const other = {
   ...owner,
   id: ThreadId.make("other-project-task"),
@@ -52,8 +66,9 @@ it.effect(
   "registers the tools, delegates with the selected native account, and denies project or capability escapes",
   () => {
     const commands: Array<OrchestrationCommand> = [];
+    let currentOwner = owner;
     const settingsLayer = ServerSettingsService.layerTest({
-      orchestratorModelSelection: selection,
+      orchestratorModelSelection: null,
     });
     const layer = OrchestratorToolkitHandlersLive.pipe(
       Layer.provide(
@@ -68,7 +83,7 @@ it.effect(
       Layer.provide(
         Layer.mock(ProjectionSnapshotQuery, {
           getThreadShellById: (threadId) =>
-            Effect.succeed(Option.some(threadId === owner.id ? owner : other)),
+            Effect.succeed(Option.some(threadId === owner.id ? currentOwner : other)),
         }),
       ),
       Layer.provide(
@@ -147,6 +162,7 @@ it.effect(
         projectId: owner.projectId,
         modelSelection: { instanceId: workerAccount, model: "astra-test" },
         runtimeMode: "approval-required",
+        orchestration: DEFAULT_THREAD_ORCHESTRATION,
       });
       expect(commands[1]).toMatchObject({
         type: "thread.turn.start",
@@ -180,8 +196,7 @@ it.effect(
       );
       expect(wrongAccount[0]?.isFailure).toBe(true);
       expect(commands).toHaveLength(2);
-      const settings = yield* ServerSettingsService;
-      yield* settings.updateSettings({ projectProviderAccounts: { [owner.projectId]: [account] } });
+      currentOwner = { ...owner, orchestration: { mode: "delegated", workerAccountIds: [] } };
       const filtered = yield* toolkit
         .handle("t3_accounts", {})
         .pipe(Stream.unwrap, Stream.runCollect);
@@ -196,7 +211,7 @@ it.effect(
         .pipe(Stream.unwrap, Stream.runCollect);
       expect(denied[0]?.isFailure).toBe(true);
       expect(commands).toHaveLength(2);
-      yield* settings.updateSettings({ projectProviderAccounts: { [owner.projectId]: [] } });
+      currentOwner = { ...owner, orchestration: DEFAULT_THREAD_ORCHESTRATION };
       const excludedOwner = yield* toolkit
         .handle("t3_accounts", {})
         .pipe(Stream.unwrap, Stream.runCollect);

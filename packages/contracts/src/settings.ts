@@ -939,7 +939,7 @@ export const ServerSettings = Schema.Struct({
   ),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   autoUpdateProviders: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  /** Missing or null means all accounts; an empty list deliberately allows none. */
+  /** Legacy setting retained for decoding; working accounts are now selected per thread. */
   projectProviderAccounts: Schema.Record(
     ProjectId,
     Schema.NullOr(Schema.Array(ProviderInstanceId)),
@@ -976,6 +976,7 @@ export const ServerSettings = Schema.Struct({
   defaultModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  /** Legacy setting. The thread's chat model now orchestrates when delegation is enabled. */
   orchestratorModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),

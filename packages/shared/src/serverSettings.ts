@@ -3,6 +3,7 @@ import {
   isProviderAvailable,
   resolveProviderInstanceEnabled,
   type ModelSelection,
+  type ThreadOrchestration,
   type ProjectId,
   type ProviderDriverKind,
   type ProviderInstanceId,
@@ -57,6 +58,22 @@ export function isOrchestratorSelection(
   if (!orchestrator || orchestrator.model !== selection.model) return false;
   const chain = providerAccountChain(settings, orchestrator.instanceId);
   return chain.slice(chain.indexOf(orchestrator.instanceId)).includes(selection.instanceId);
+}
+
+/** Only selected workers may receive assignments; resumed workers may use their substitutes. */
+export function isThreadWorkerAccountAllowed(
+  orchestration: ThreadOrchestration | undefined,
+  instanceId: ProviderInstanceId,
+  settings: Pick<ServerSettings, "providerAccountFallbacks">,
+  includeSubstitutes = false,
+): boolean {
+  if (orchestration?.mode !== "delegated") return false;
+  return orchestration.workerAccountIds.some((primary) => {
+    if (primary === instanceId) return true;
+    if (!includeSubstitutes) return false;
+    const chain = providerAccountChain(settings, primary);
+    return chain.slice(chain.indexOf(primary) + 1).includes(instanceId);
+  });
 }
 
 /** Reject ambiguous chains instead of choosing an arbitrary primary during recovery. */
