@@ -25,6 +25,16 @@ import {
 const ServerSettingsJson = fromLenientJson(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownOption(ServerSettingsJson);
 
+/** Project restrictions apply equally to direct turns, workers, and substitutes. */
+export function isProjectProviderAccountAllowed(
+  settings: Pick<ServerSettings, "projectProviderAccounts">,
+  projectId: ProjectId | null | undefined,
+  instanceId: ProviderInstanceId,
+): boolean {
+  const accounts = projectId == null ? null : settings.projectProviderAccounts[projectId];
+  return accounts == null || accounts.includes(instanceId);
+}
+
 /** The order stays stable after a thread moves from its primary to a substitute. */
 export function providerAccountChain(
   settings: Pick<ServerSettings, "providerAccountFallbacks">,
@@ -386,6 +396,14 @@ export function applyServerSettingsPatch(
       : {}),
     ...(patch.providerAccountFallbacks !== undefined
       ? { providerAccountFallbacks: patch.providerAccountFallbacks }
+      : {}),
+    ...(patch.projectProviderAccounts !== undefined
+      ? {
+          projectProviderAccounts: {
+            ...current.projectProviderAccounts,
+            ...patch.projectProviderAccounts,
+          },
+        }
       : {}),
     ...(patch.defaultProjectScripts !== undefined
       ? { defaultProjectScripts: patch.defaultProjectScripts }

@@ -15,6 +15,7 @@ import {
   applyServerSettingsPatch,
   providerAccountChain,
   isOrchestratorSelection,
+  isProjectProviderAccountAllowed,
   validateProviderAccountFallbacks,
   createSubscriptionAccountPatch,
   removeSubscriptionAccountReferences,
@@ -843,4 +844,26 @@ describe("serverSettings helpers", () => {
 
     expect(resolved.pauseWhenOnBattery).toBe(false);
   });
+});
+
+it("replaces one project's allowed accounts, preserves other projects, and resets to all", () => {
+  const project = ProjectId.make("codex-only");
+  const other = ProjectId.make("other");
+  const main = ProviderInstanceId.make("codex");
+  const backup = ProviderInstanceId.make("codex_backup");
+  const claude = ProviderInstanceId.make("claudeAgent");
+  const initial = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    projectProviderAccounts: { [project]: [main, backup], [other]: [claude] },
+  });
+  expect(isProjectProviderAccountAllowed(initial, project, main)).toBe(true);
+  expect(isProjectProviderAccountAllowed(initial, project, backup)).toBe(true);
+  expect(isProjectProviderAccountAllowed(initial, project, claude)).toBe(false);
+  expect(isProjectProviderAccountAllowed(initial, ProjectId.make("unrestricted"), claude)).toBe(
+    true,
+  );
+  const empty = applyServerSettingsPatch(initial, { projectProviderAccounts: { [project]: [] } });
+  expect(isProjectProviderAccountAllowed(empty, project, main)).toBe(false);
+  expect(empty.projectProviderAccounts[other]).toEqual([claude]);
+  const reset = applyServerSettingsPatch(empty, { projectProviderAccounts: { [project]: null } });
+  expect(isProjectProviderAccountAllowed(reset, project, claude)).toBe(true);
 });
