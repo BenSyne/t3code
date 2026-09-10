@@ -52,6 +52,9 @@ it.effect(
   "registers the tools, delegates with the selected native account, and denies project or capability escapes",
   () => {
     const commands: Array<OrchestrationCommand> = [];
+    const settingsLayer = ServerSettingsService.layerTest({
+      orchestratorModelSelection: selection,
+    });
     const layer = OrchestratorToolkitHandlersLive.pipe(
       Layer.provide(
         Layer.mock(OrchestrationEngineService, {
@@ -87,7 +90,7 @@ it.effect(
           },
         ]),
       ),
-      Layer.provide(ServerSettingsService.layerTest({ orchestratorModelSelection: selection })),
+      Layer.provide(settingsLayer),
       Layer.provide(NodeServices.layer),
     );
     return Effect.gen(function* () {
@@ -177,6 +180,30 @@ it.effect(
       );
       expect(wrongAccount[0]?.isFailure).toBe(true);
       expect(commands).toHaveLength(2);
-    }).pipe(Effect.provide(layer), Effect.provideService(McpInvocationContext, invocation));
+      const settings = yield* ServerSettingsService;
+      yield* settings.updateSettings({ projectProviderAccounts: { [owner.projectId]: [account] } });
+      const filtered = yield* toolkit
+        .handle("t3_accounts", {})
+        .pipe(Stream.unwrap, Stream.runCollect);
+      expect(filtered[0]?.result).toEqual({ accounts: [] });
+      const denied = yield* toolkit
+        .handle("t3_delegate", {
+          requestId: "excluded-worker",
+          title: "Excluded",
+          prompt: "Do work",
+          modelSelection: { instanceId: workerAccount, model: "astra-test" },
+        })
+        .pipe(Stream.unwrap, Stream.runCollect);
+      expect(denied[0]?.isFailure).toBe(true);
+      expect(commands).toHaveLength(2);
+      yield* settings.updateSettings({ projectProviderAccounts: { [owner.projectId]: [] } });
+      const excludedOwner = yield* toolkit
+        .handle("t3_accounts", {})
+        .pipe(Stream.unwrap, Stream.runCollect);
+      expect(excludedOwner[0]?.isFailure).toBe(true);
+    }).pipe(
+      Effect.provide(Layer.mergeAll(layer, settingsLayer)),
+      Effect.provideService(McpInvocationContext, invocation),
+    );
   },
 );

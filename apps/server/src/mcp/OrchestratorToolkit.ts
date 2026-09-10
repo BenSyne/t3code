@@ -1,5 +1,8 @@
 import { CommandId, MessageId, ModelSelection, ThreadId } from "@t3tools/contracts";
-import { isOrchestratorSelection } from "@t3tools/shared/serverSettings";
+import {
+  isOrchestratorSelection,
+  isProjectProviderAccountAllowed,
+} from "@t3tools/shared/serverSettings";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -32,7 +35,7 @@ export const OrchestratorToolkit = Toolkit.make(
   Tool.make("t3_accounts", {
     ...options,
     description:
-      "List this environment's worker accounts and their available model IDs. Use the returned IDs when delegating.",
+      "List the accounts allowed in this project and their available model IDs. Use the returned IDs when delegating.",
     parameters: Schema.Record(Schema.String, Schema.Never),
   }).annotate(Tool.Readonly, true),
   Tool.make("t3_tasks", {
@@ -101,7 +104,12 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
       if (
         Option.isNone(thread) ||
         invocation.providerInstanceId !== thread.value.modelSelection.instanceId ||
-        !isOrchestratorSelection(currentSettings, thread.value.modelSelection)
+        !isOrchestratorSelection(currentSettings, thread.value.modelSelection) ||
+        !isProjectProviderAccountAllowed(
+          currentSettings,
+          thread.value.projectId,
+          invocation.providerInstanceId,
+        )
       ) {
         return yield* fail(
           "This session is not the configured orchestrator. Start a task with the orchestrator account and model.",
@@ -137,9 +145,19 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
       t3_accounts: () =>
         protect(
           Effect.gen(function* () {
-            yield* authorize();
+            const owner = yield* authorize();
+            const currentSettings = yield* settings.getSettings;
             const accounts = (yield* providers.getProviders)
-              .filter((provider) => provider.enabled && provider.installed)
+              .filter(
+                (provider) =>
+                  provider.enabled &&
+                  provider.installed &&
+                  isProjectProviderAccountAllowed(
+                    currentSettings,
+                    owner.projectId,
+                    provider.instanceId,
+                  ),
+              )
               .map((provider) => ({
                 instanceId: provider.instanceId,
                 name: provider.displayName ?? provider.driver,
@@ -171,6 +189,16 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
         protect(
           Effect.gen(function* () {
             const owner = yield* authorize();
+            if (
+              !isProjectProviderAccountAllowed(
+                yield* settings.getSettings,
+                owner.projectId,
+                input.modelSelection.instanceId,
+              )
+            )
+              return yield* fail(
+                "This account is not allowed in this project. Change the project's provider accounts in Settings → Projects.",
+              );
             const account = (yield* providers.getProviders).find(
               (provider) => provider.instanceId === input.modelSelection.instanceId,
             );
@@ -279,6 +307,16 @@ export const OrchestratorToolkitHandlersLive = OrchestratorToolkit.toLayer(
                 createdAt,
               });
             } else {
+              if (
+                !isProjectProviderAccountAllowed(
+                  yield* settings.getSettings,
+                  target.projectId,
+                  target.modelSelection.instanceId,
+                )
+              )
+                return yield* fail(
+                  "This task's account is no longer allowed in the project. Update the project's provider accounts before continuing it.",
+                );
               if (!input.prompt) return yield* fail("A follow-up prompt is required.");
               if (target.session?.status === "running" || target.session?.status === "starting") {
                 return yield* fail(

@@ -477,12 +477,14 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       buildModelOptions(
         selectedEnvironmentServerConfig,
         draftModelSelection ?? projectDefaultModelSelection ?? stickyModelSelection,
+        selectedProject?.id,
       ),
     [
       selectedEnvironmentServerConfig,
       draftModelSelection,
       projectDefaultModelSelection,
       stickyModelSelection,
+      selectedProject?.id,
     ],
   );
 

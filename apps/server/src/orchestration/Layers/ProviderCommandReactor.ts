@@ -14,7 +14,10 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
-import { providerAccountChain } from "@t3tools/shared/serverSettings";
+import {
+  providerAccountChain,
+  isProjectProviderAccountAllowed,
+} from "@t3tools/shared/serverSettings";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -1764,6 +1767,19 @@ const make = Effect.gen(function* () {
     const providers = yield* providerRegistry.getProviders;
     for (const instanceId of remaining) {
       if (cancelled()) return;
+      if (
+        !isProjectProviderAccountAllowed(
+          yield* serverSettingsService.getSettings,
+          thread.projectId,
+          instanceId,
+        )
+      ) {
+        yield* report(
+          "Substitute account skipped",
+          `${instanceId} is not allowed in this project.`,
+        );
+        continue;
+      }
       const candidate = providers.find((provider) => provider.instanceId === instanceId);
       if (
         !candidate?.enabled ||

@@ -28,7 +28,11 @@ import {
 } from "@t3tools/contracts";
 import { resolveEnvModeLabel } from "../BranchToolbar.logic";
 import { createModelSelection } from "@t3tools/shared/model";
-import { resolveProjectAutoPull } from "@t3tools/shared/serverSettings";
+import {
+  resolveProjectAutoPull,
+  isProjectProviderAccountAllowed,
+} from "@t3tools/shared/serverSettings";
+import { ProjectProviderAccounts } from "./ProjectProviderAccounts";
 import {
   projectScriptsInheritDefaults,
   resolveProjectScripts,
@@ -607,11 +611,13 @@ function ProjectDetail({
     () =>
       sortProviderInstanceEntries(
         applyProviderInstanceSettings(
-          deriveProviderInstanceEntries(serverProviders),
+          deriveProviderInstanceEntries(serverProviders).filter((entry) =>
+            isProjectProviderAccountAllowed(projectSettings, representative.id, entry.instanceId),
+          ),
           projectSettings,
         ),
       ),
-    [serverProviders, projectSettings],
+    [serverProviders, projectSettings, representative.id],
   );
   const modelOptionsByInstance = useMemo(
     () =>
@@ -643,6 +649,8 @@ function ProjectDetail({
           : undefined;
         if (
           !entry?.enabled ||
+          !config ||
+          !isProjectProviderAccountAllowed(config.settings, member.id, selection.instanceId) ||
           !entry.isAvailable ||
           !options?.some((model) => model.slug === selection.model && !model.isUnavailable)
         ) {
@@ -1239,6 +1247,15 @@ function ProjectDetail({
             }
           />
         </SettingsSection>
+
+        {group.memberProjects.map((member) => (
+          <ProjectProviderAccounts
+            key={member.physicalProjectKey}
+            environmentId={member.environmentId}
+            projectId={member.id}
+            label={checkoutLabel(member)}
+          />
+        ))}
 
         <SettingsSection title="Checkout">
           {hasMultipleCheckouts ? (

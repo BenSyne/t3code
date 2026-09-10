@@ -1,3 +1,4 @@
+import { isProjectProviderAccountAllowed } from "@t3tools/shared/serverSettings";
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import {
@@ -2569,9 +2570,14 @@ export default function ChatView(props: ChatViewProps) {
   const providerInstanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providerStatuses), settings),
+        applyProviderInstanceSettings(
+          deriveProviderInstanceEntries(providerStatuses).filter((entry) =>
+            isProjectProviderAccountAllowed(settings, activeProject?.id, entry.instanceId),
+          ),
+          settings,
+        ),
       ),
-    [providerStatuses, settings],
+    [providerStatuses, settings, activeProject?.id],
   );
   const { selectedProviderEntry, requestedDriverKind } = useMemo(
     () =>
@@ -8399,6 +8405,7 @@ export default function ChatView(props: ChatViewProps) {
                             lockedProvider={lockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
                             providerCatalogKnown={serverConfig !== null}
+                            projectId={activeProject?.id ?? null}
                             activeProjectDefaultModelSelection={activeProjectDefaultModelSelection}
                             activeThreadModelSelection={activeThread?.modelSelection}
                             activeContextWindow={activeContextWindow}

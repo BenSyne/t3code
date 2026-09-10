@@ -1,5 +1,6 @@
 import type {
   ModelCapabilities,
+  ProjectId,
   ModelSelection,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
@@ -7,7 +8,10 @@ import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
-import { isOrchestratorSelection } from "@t3tools/shared/serverSettings";
+import {
+  isOrchestratorSelection,
+  isProjectProviderAccountAllowed,
+} from "@t3tools/shared/serverSettings";
 
 export type ModelOption = {
   readonly key: string;
@@ -62,14 +66,20 @@ function normalizeSelectionOptions(
       };
 }
 
-/** Whether a known Antigravity selection needs setup or a different model. */
+/** Whether project restrictions or Antigravity setup prevent using a selection. */
 export function isModelSelectionUnavailable(
   config: T3ServerConfig | null | undefined,
   selection: ModelSelection | null | undefined,
+  projectId?: ProjectId | null,
 ): boolean {
   if (!config || !selection) {
     return false;
   }
+  if (
+    config.settings &&
+    !isProjectProviderAccountAllowed(config.settings, projectId, selection.instanceId)
+  )
+    return true;
   const provider = config.providers.find(
     (candidate) => candidate.instanceId === selection.instanceId,
   );
@@ -151,11 +161,14 @@ export function resolveNewTaskModelSelection(input: {
 export function buildModelOptions(
   config: T3ServerConfig | null | undefined,
   fallbackModelSelection: ModelSelection | null,
+  projectId?: ProjectId | null,
 ): ReadonlyArray<ModelOption> {
   const options = new Map<string, ModelOption>();
 
   for (const provider of config?.providers ?? []) {
     if (
+      (config?.settings &&
+        !isProjectProviderAccountAllowed(config.settings, projectId, provider.instanceId)) ||
       !provider.enabled ||
       !provider.installed ||
       provider.auth.status === "unauthenticated" ||
@@ -230,7 +243,7 @@ export function buildModelOptions(
         providerDriver,
         isDefault: false,
         isLegacy: model?.isLegacy === true,
-        ...(isModelSelectionUnavailable(config, fallbackModelSelection)
+        ...(isModelSelectionUnavailable(config, fallbackModelSelection, projectId)
           ? { isUnavailable: true }
           : {}),
         capabilities: model?.capabilities ?? null,

@@ -4806,6 +4806,8 @@ describe("agent browser access", () => {
     threadId: ThreadId,
     projectOverride?: boolean,
     orchestration = false,
+    allowedAccounts?: ReadonlyArray<ProviderInstanceId>,
+    excludeAfterStart = false,
   ) =>
     Effect.gen(function* () {
       const issued: Array<ThreadId> = [];
@@ -4876,9 +4878,11 @@ describe("agent browser access", () => {
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
         Layer.provide(projectionLayer),
-        Layer.provide(
+        Layer.provideMerge(
           ServerSettings.ServerSettingsService.layerTest({
             enableAgentBrowserAccess,
+            projectProviderAccounts:
+              allowedAccounts === undefined ? {} : { [projectId]: allowedAccounts },
             ...(orchestration
               ? { orchestratorModelSelection: { instanceId: codexInstanceId, model: "astra-test" } }
               : {}),
@@ -4898,16 +4902,49 @@ describe("agent browser access", () => {
 
       yield* Effect.gen(function* () {
         const provider = yield* ProviderService.ProviderService;
-        return yield* provider.startSession(threadId, {
+        const started = yield* provider.startSession(threadId, {
           provider: CODEX_DRIVER,
           providerInstanceId: codexInstanceId,
           threadId,
           runtimeMode: "full-access",
         });
+        if (excludeAfterStart) {
+          const settings = yield* ServerSettings.ServerSettingsService;
+          yield* settings.updateSettings({ projectProviderAccounts: { [projectId]: [] } });
+          yield* provider.sendTurn({ threadId, input: "Continue" });
+        }
+        return started;
       }).pipe(Effect.provide(providerLayer));
 
       return issued;
     });
+
+  it.effect("rejects a native session when its account is excluded from the project", () =>
+    Effect.gen(function* () {
+      const result = yield* startSessionWith(
+        false,
+        asThreadId("excluded-account"),
+        undefined,
+        false,
+        [],
+      ).pipe(Effect.flip);
+      assert.match(String(result), /not allowed in this project/);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("blocks the next turn after excluding an already-started account", () =>
+    Effect.gen(function* () {
+      const result = yield* startSessionWith(
+        false,
+        asThreadId("excluded-after-start"),
+        undefined,
+        false,
+        [codexInstanceId],
+        true,
+      ).pipe(Effect.flip);
+      assert.match(String(result), /not allowed in this project/);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 
   // Credential issuance is the observable that matters: it is the only place a
   // credential is minted, and `/mcp` accepts nothing else, so withholding it is

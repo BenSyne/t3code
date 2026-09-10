@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   DEFAULT_SERVER_SETTINGS,
   ProviderInstanceId,
+  ProjectId,
   type ModelSelection,
   type ServerConfig,
 } from "@t3tools/contracts";
@@ -71,6 +72,16 @@ describe("mobile model options", () => {
       "Orchestrator",
       "",
     ]);
+    const projectId = ProjectId.make("restricted");
+    const restricted = {
+      ...orchestratorConfig,
+      settings: { ...orchestratorConfig.settings, projectProviderAccounts: { [projectId]: [] } },
+    };
+    expect(buildModelOptions(restricted, null, projectId)).toEqual([]);
+    const selection = orchestratorConfig.settings.orchestratorModelSelection;
+    expect(buildModelOptions(restricted, selection, projectId)[0]?.isUnavailable).toBe(true);
+    expect(isModelSelectionUnavailable(restricted, selection, projectId)).toBe(true);
+    expect(buildModelOptions(restricted, null)).toHaveLength(2);
   });
 
   it("distinguishes same-name OpenCode models without changing their routing", () => {

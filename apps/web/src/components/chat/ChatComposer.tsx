@@ -1,3 +1,4 @@
+import { isProjectProviderAccountAllowed } from "@t3tools/shared/serverSettings";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
   questionAttachmentDraftId,
@@ -9,6 +10,7 @@ import type {
   AssistantCitation,
   ChatFileAttachment,
   EnvironmentId,
+  ProjectId,
   ModelSelection,
   PreviewAnnotationPayload,
   ProviderApprovalDecision,
@@ -1313,6 +1315,7 @@ export interface ChatComposerProps {
   providerStatuses: ServerProvider[];
   /** False until the environment's server config has arrived at least once. */
   providerCatalogKnown: boolean;
+  projectId: ProjectId | null;
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
 
@@ -1432,6 +1435,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     lockedProvider,
     providerStatuses,
     providerCatalogKnown,
+    projectId,
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     activeContextWindow,
@@ -1692,9 +1696,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const providerInstanceEntries = useMemo<ReadonlyArray<ProviderInstanceEntry>>(
     () =>
       sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providerStatuses), settings),
+        applyProviderInstanceSettings(
+          deriveProviderInstanceEntries(providerStatuses).filter((entry) =>
+            isProjectProviderAccountAllowed(settings, projectId, entry.instanceId),
+          ),
+          settings,
+        ),
       ),
-    [providerStatuses, settings],
+    [providerStatuses, settings, projectId],
   );
   const selectedProviderByThreadId = composerDraft.activeProvider ?? null;
   const {
@@ -4188,7 +4197,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onOpenChange={setIsComposerModelPickerOpen}
         getModelDisabledReason={getModelDisabledReason}
         onInstanceModelChange={onProviderModelSelect}
-        orchestratorModelSelection={settings.orchestratorModelSelection}
+        orchestratorModelSelection={
+          settings.orchestratorModelSelection &&
+          isProjectProviderAccountAllowed(
+            settings,
+            projectId,
+            settings.orchestratorModelSelection.instanceId,
+          )
+            ? settings.orchestratorModelSelection
+            : null
+        }
         onOpenProviderSetup={onOpenProviderSetup}
       />
 

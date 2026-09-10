@@ -155,14 +155,16 @@ describe("ProviderCommandReactor", () => {
         const backup = ProviderInstanceId.make("codex_backup");
         const last = ProviderInstanceId.make("codex_last");
         const wrongModel = ProviderInstanceId.make("codex_other_model");
+        const excluded = ProviderInstanceId.make("codex_excluded");
         const firstSent = yield* Deferred.make<void>();
         const secondSent = yield* Deferred.make<void>();
         const stopped = yield* Deferred.make<void>();
         let sendCount = 0;
         const harness = yield* Effect.promise(() =>
           createHarness({
-            accountFallbacks: { [main]: [wrongModel, backup, last] },
-            providers: [backup, last, wrongModel].map((instanceId) => ({
+            accountFallbacks: { [main]: [excluded, wrongModel, backup, last] },
+            projectAccounts: { [ProjectId.make("project-1")]: [main, wrongModel, backup, last] },
+            providers: [excluded, backup, last, wrongModel].map((instanceId) => ({
               instanceId,
               driver: ProviderDriverKind.make("codex"),
               enabled: true,
@@ -380,6 +382,7 @@ describe("ProviderCommandReactor", () => {
 
   async function createHarness(input?: {
     readonly accountFallbacks?: ServerSettings["providerAccountFallbacks"];
+    readonly projectAccounts?: ServerSettings["projectProviderAccounts"];
     readonly providers?: ReadonlyArray<ServerProvider>;
     readonly sendTurnEffect?: () => Effect.Effect<void>;
     readonly baseDir?: string;
@@ -702,6 +705,7 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(
         ServerSettingsService.layerTest({
           providerAccountFallbacks: input?.accountFallbacks ?? {},
+          projectProviderAccounts: input?.projectAccounts ?? {},
         }),
       ),
       Layer.provideMerge(SqlitePersistenceMemory),

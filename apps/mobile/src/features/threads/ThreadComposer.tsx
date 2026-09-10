@@ -285,7 +285,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const currentRuntimeMode = props.selectedThread.runtimeMode;
   const modelUnavailable =
     props.connectionState === "connected" &&
-    isModelSelectionUnavailable(props.serverConfig, currentModelSelection);
+    isModelSelectionUnavailable(
+      props.serverConfig,
+      currentModelSelection,
+      props.selectedThread.projectId,
+    );
   const selectedProviderStatus = useMemo(() => {
     if (!props.serverConfig) return null;
     return (
@@ -460,8 +464,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   // ── Model menu ───────────────────────────────────────────
   const modelOptions = useMemo(
-    () => buildModelOptions(props.serverConfig, currentModelSelection),
-    [props.serverConfig, currentModelSelection],
+    () =>
+      buildModelOptions(props.serverConfig, currentModelSelection, props.selectedThread.projectId),
+    [props.serverConfig, currentModelSelection, props.selectedThread.projectId],
   );
   const providerGroups = useMemo(() => groupByProvider(modelOptions), [modelOptions]);
   // An existing thread is bound to its harness: sessions can't move between

@@ -38,6 +38,7 @@ import { causeErrorTag } from "@t3tools/shared/observability";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import {
   isOrchestratorSelection,
+  isProjectProviderAccountAllowed,
   resolveProjectAgentBrowserAccess,
 } from "@t3tools/shared/serverSettings";
 import * as DateTime from "effect/DateTime";
@@ -892,6 +893,41 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     ),
   );
 
+  const requireProjectAccount = Effect.fn("ProviderService.requireProjectAccount")(function* (
+    threadId: ThreadId,
+    instanceId: ProviderInstanceId,
+  ) {
+    const settings = yield* serverSettings.getSettings.pipe(
+      Effect.mapError(() =>
+        toValidationError(
+          "ProviderService.projectAccount",
+          "Could not read project provider settings.",
+        ),
+      ),
+    );
+    if (Object.keys(settings.projectProviderAccounts).length === 0) return;
+    const thread = Option.isSome(projectionQuery)
+      ? yield* projectionQuery.value
+          .getThreadShellById(threadId)
+          .pipe(
+            Effect.mapError(() =>
+              toValidationError(
+                "ProviderService.projectAccount",
+                "Could not read the task's project.",
+              ),
+            ),
+          )
+      : Option.none();
+    if (
+      Option.isNone(thread) ||
+      !isProjectProviderAccountAllowed(settings, thread.value.projectId, instanceId)
+    )
+      return yield* toValidationError(
+        "ProviderService.projectAccount",
+        "This account is not allowed in this project. Change the project's provider accounts in Settings → Projects before continuing.",
+      );
+  });
+
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
       const capabilities: Array<"preview" | "orchestration"> = [];
@@ -1167,6 +1203,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     readonly operation: string;
   }) {
     const bindingInstanceId = yield* requireBindingInstanceId(input.operation, input.binding);
+    yield* requireProjectAccount(input.binding.threadId, bindingInstanceId);
     yield* Effect.annotateCurrentSpan({
       "provider.operation": "recover-session",
       "provider.kind": input.binding.provider,
@@ -1344,6 +1381,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         "ProviderService.startSession",
         parsed,
       );
+      yield* requireProjectAccount(threadId, resolvedInstanceId);
       let metricProvider = parsed.provider ?? String(resolvedInstanceId);
       yield* Effect.annotateCurrentSpan({
         "provider.operation": "start-session",
@@ -1624,6 +1662,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         operation: "ProviderService.sendTurn",
         allowRecovery: false,
       });
+      yield* requireProjectAccount(input.threadId, routed.instanceId);
       if (
         input.continuation === true &&
         !input.input &&
