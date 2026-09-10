@@ -13,6 +13,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import { McpServer, Tool } from "effect/unstable/ai";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { makeProviderRegistryLayer } from "../provider/testUtils/providerRegistryMock.ts";
@@ -47,7 +48,7 @@ const invocation = {
 };
 
 it.effect(
-  "delegates with the selected native worker account and denies project or capability escapes",
+  "registers the tools, delegates with the selected native account, and denies project or capability escapes",
   () => {
     const commands: Array<OrchestrationCommand> = [];
     const layer = OrchestratorToolkitHandlersLive.pipe(
@@ -89,6 +90,16 @@ it.effect(
       Layer.provide(NodeServices.layer),
     );
     return Effect.gen(function* () {
+      yield* Effect.scoped(Layer.build(McpServer.toolkit(OrchestratorToolkit)));
+      expect(Tool.getJsonSchema(OrchestratorToolkit.tools.t3_delegate)).toMatchObject({
+        properties: {
+          modelSelection: {
+            type: "object",
+            required: ["instanceId", "model"],
+            properties: { instanceId: { type: "string" }, model: { type: "string" } },
+          },
+        },
+      });
       const toolkit = yield* OrchestratorToolkit;
       const delegated = yield* toolkit
         .handle("t3_delegate", {
