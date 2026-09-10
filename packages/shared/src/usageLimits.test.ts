@@ -3,6 +3,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
+  type ThreadOrchestration,
   type UsageLimitSourceAccount,
   UsageLimitSourceId,
 } from "@t3tools/contracts";
@@ -12,6 +13,7 @@ import {
   type LimitAccount,
   isUsageLimitsCommand,
   collectProviderUsageLimits,
+  collectThreadUsageLimits,
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
   collectLimitAccounts,
@@ -54,6 +56,232 @@ function provider(overrides: Partial<ServerProvider>): ServerProvider {
     ...overrides,
   };
 }
+
+describe("collectThreadUsageLimits", () => {
+  const main = ProviderInstanceId.make("codex");
+  const backup = ProviderInstanceId.make("codex_backup");
+  const claude = ProviderInstanceId.make("claudeAgent");
+  const claudeBackup = ProviderInstanceId.make("claude_backup");
+  const selection = { instanceId: main, model: "gpt-astra" };
+  const settings = { providerAccountFallbacks: { [main]: [backup], [claude]: [claudeBackup] } };
+  const limits = { checkedAt: "2026-09-03T11:00:00.000Z", windows: [window] };
+  const model = (slug: string, name: string) => ({
+    slug,
+    name,
+    isCustom: false,
+    capabilities: null,
+  });
+  const providers = [
+    provider({
+      usageLimits: limits,
+      auth: { status: "authenticated", email: "main@example.com" },
+      models: [model("gpt-astra", "Astra")],
+    }),
+    provider({
+      instanceId: backup,
+      auth: { status: "authenticated", email: "backup@example.com" },
+      usageLimits: { ...limits, windows: [{ ...window, usedPercent: 9 }] },
+    }),
+    provider({
+      instanceId: claude,
+      driver: ProviderDriverKind.make("claudeAgent"),
+      auth: { status: "authenticated", email: "claude@example.com" },
+      models: [model("claude-fable-5-1", "Claude Fable 5.1")],
+      usageLimits: {
+        ...limits,
+        windows: [
+          window,
+          { ...window, id: "fable_week", modelFamily: "Fable", label: "Weekly · Fable" },
+          { ...window, id: "opus_week", modelFamily: "Opus", label: "Weekly · Opus" },
+        ],
+      },
+    }),
+    provider({
+      instanceId: claudeBackup,
+      driver: ProviderDriverKind.make("claudeAgent"),
+      auth: { status: "unauthenticated" },
+    }),
+  ];
+  const team: ThreadOrchestration = {
+    mode: "delegated",
+    workerAccountIds: [main, claude],
+    workerModels: [
+      selection,
+      { instanceId: main, model: "gpt-terra" },
+      { instanceId: claude, model: "claude-fable-5-1" },
+    ],
+  };
+
+  it("groups shared quotas once per account and merges roles for the same model", () => {
+    const rows = collectThreadUsageLimits(selection, team, settings, providers);
+    expect(rows.map((row) => row.instanceId)).toEqual([main, claude, backup, claudeBackup]);
+    expect(rows[0]?.models).toEqual([
+      { model: "gpt-astra", name: "Astra", roles: ["Orchestrator", "Worker"] },
+      { model: "gpt-terra", name: "gpt-terra", roles: ["Worker"] },
+    ]);
+    expect(rows[0]?.windows).toEqual([window]);
+    expect(rows[2]?.models).toEqual([
+      { model: "gpt-astra", name: "Astra", roles: ["Backup"] },
+      { model: "gpt-terra", name: "gpt-terra", roles: ["Backup"] },
+    ]);
+    expect(rows[2]?.windows[0]?.usedPercent).toBe(9);
+    expect(rows[3]?.notice).toBe("Sign in to see subscription usage.");
+  });
+
+  it("drops inactive workers in usage-only mode and follows a new orchestrator immediately", () => {
+    const solo: ThreadOrchestration = { ...team, mode: "same-account" };
+    const rows = collectThreadUsageLimits(selection, solo, settings, providers);
+    expect(rows.map((row) => row.instanceId)).toEqual([main, backup]);
+    expect(rows[0]?.models).toEqual([
+      { model: "gpt-astra", name: "Astra", roles: ["Orchestrator & builder"] },
+    ]);
+    expect(
+      collectThreadUsageLimits(
+        { instanceId: claude, model: "claude-fable-5-1" },
+        solo,
+        settings,
+        providers,
+      ).map((row) => row.instanceId),
+    ).toEqual([claude, claudeBackup]);
+  });
+
+  it("removes deselected models and backups without adding unrelated same-provider accounts", () => {
+    const unrelated = provider({
+      instanceId: ProviderInstanceId.make("unrelated"),
+      usageLimits: limits,
+    });
+    const reduced = {
+      ...team,
+      workerAccountIds: [main],
+      workerModels: [selection],
+      fallbackAccountIds: [],
+    };
+    const rows = collectThreadUsageLimits(selection, reduced, settings, [...providers, unrelated]);
+    expect(rows.map((row) => row.instanceId)).toEqual([main]);
+    expect(rows[0]?.models.map((model) => model.model)).toEqual([selection.model]);
+    expect(
+      collectThreadUsageLimits(
+        selection,
+        {
+          ...reduced,
+          workerAccountIds: [],
+          workerModels: [{ instanceId: claude, model: "claude-fable-5-1" }],
+        },
+        settings,
+        providers,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("shows only the selected model families alongside shared windows", () => {
+    const solo: ThreadOrchestration = {
+      mode: "same-account",
+      workerAccountIds: [],
+      fallbackAccountIds: [],
+    };
+    const rows = (model: string) =>
+      collectThreadUsageLimits(
+        { instanceId: claude, model },
+        solo,
+        settings,
+        providers,
+      )[0]?.windows.map((window) => window.id);
+    expect(rows("claude-fable-5-1")).toEqual(["five_hour", "fable_week"]);
+    expect(rows("claude-opus-4-6")).toEqual(["five_hour", "opus_week"]);
+    expect(rows("claude-fablet-1")).toEqual(["five_hour"]);
+    const alias = provider({ ...providers[2], models: [model("latest", "Claude Fable 5.1")] });
+    expect(
+      collectThreadUsageLimits({ instanceId: claude, model: "latest" }, solo, settings, [
+        alias,
+      ])[0]?.windows.map((window) => window.id),
+    ).toEqual(["five_hour", "fable_week"]);
+  });
+
+  it("expands legacy account-only worker choices from their model catalog", () => {
+    const rows = collectThreadUsageLimits(
+      selection,
+      { mode: "delegated", workerAccountIds: [claude], fallbackAccountIds: [] },
+      settings,
+      providers,
+    );
+    expect(rows[1]?.models.map((model) => model.model)).toEqual(["claude-fable-5-1"]);
+  });
+
+  it("does not show duplicate subscription quota as extra backup capacity", () => {
+    const duplicate = provider({
+      ...providers[1],
+      auth: { status: "authenticated", email: "MAIN@example.com" },
+    });
+    const rows = collectThreadUsageLimits(selection, team, settings, [providers[0]!, duplicate]);
+    const row = rows.find((row) => row.instanceId === backup);
+    expect(row?.windows).toEqual([]);
+    expect(row?.notice).toContain("same subscription");
+    expect(row?.checkedAt).toBeUndefined();
+  });
+
+  it.each([
+    { enabled: false },
+    { installed: false },
+    { auth: { status: "unauthenticated" as const } },
+    { availability: "unavailable" as const },
+  ])("hides cached usage when an account cannot be used: %j", (overrides) => {
+    const rows = collectThreadUsageLimits(
+      selection,
+      { ...team, fallbackAccountIds: [] },
+      settings,
+      [provider({ usageLimits: limits, ...overrides })],
+    );
+    expect(rows[0]?.windows).toEqual([]);
+    expect(rows[0]?.notice).toBeTruthy();
+  });
+
+  it("distinguishes unknown, failed, unsupported and missing accounts from actual zero usage", () => {
+    const solo: ThreadOrchestration = {
+      mode: "same-account",
+      workerAccountIds: [],
+      fallbackAccountIds: [],
+    };
+    const read = (providers: ServerProvider[]) =>
+      collectThreadUsageLimits(selection, solo, settings, providers)[0]!;
+    expect(read([]).notice).toBe("Account is no longer available.");
+    expect(read([provider({})]).windows).toEqual([]);
+    expect(read([provider({})]).notice).toContain("not reported");
+    expect(
+      read([provider({ usageLimits: { ...limits, unavailable: { reason: "unsupported" } } })])
+        .windows,
+    ).toEqual([]);
+    const failed = read([
+      provider({
+        usageLimits: { ...limits, unavailable: { reason: "probeFailed", message: "Probe failed" } },
+      }),
+    ]);
+    expect(failed.notice).toBe("Probe failed");
+    expect(failed.windows).toEqual([window]);
+    expect(
+      read([provider({ usageLimits: { ...limits, windows: [{ ...window, usedPercent: 0 }] } })])
+        .windows[0]?.usedPercent,
+    ).toBe(0);
+  });
+
+  it("reflects new usage snapshots and preserves reported exhaustion after the reset time passes", () => {
+    const solo: ThreadOrchestration = {
+      mode: "same-account",
+      workerAccountIds: [],
+      fallbackAccountIds: [],
+    };
+    const read = (usedPercent: number) =>
+      collectThreadUsageLimits(selection, solo, settings, [
+        provider({
+          usageLimits: {
+            ...limits,
+            windows: [{ ...window, usedPercent, resetsAt: "2020-01-01T00:00:00.000Z" }],
+          },
+        }),
+      ])[0]?.windows[0]?.usedPercent;
+    expect(read(12)).toBe(12);
+    expect(read(100)).toBe(100);
+  });
+});
 
 describe("pace", () => {
   it("places the clock three fifths through a five-hour window with two hours left", () => {

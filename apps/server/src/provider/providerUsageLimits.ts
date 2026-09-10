@@ -82,6 +82,9 @@ export function applyUsageLimitsUpdate(input: {
       ...(window.windowDurationMins === undefined && existing?.windowDurationMins !== undefined
         ? { windowDurationMins: existing.windowDurationMins }
         : {}),
+      ...(window.modelFamily === undefined && existing?.modelFamily !== undefined
+        ? { modelFamily: existing.modelFamily }
+        : {}),
     };
     if (existing === undefined || !usageWindowEquals(existing, next)) {
       merged.set(window.id, next);
@@ -102,6 +105,7 @@ function usageWindowEquals(a: ServerProviderUsageWindow, b: ServerProviderUsageW
     a.id === b.id &&
     a.kind === b.kind &&
     a.label === b.label &&
+    a.modelFamily === b.modelFamily &&
     a.usedPercent === b.usedPercent &&
     a.resetsAt === b.resetsAt &&
     a.windowDurationMins === b.windowDurationMins
@@ -114,13 +118,8 @@ function usageWindowEquals(a: ServerProviderUsageWindow, b: ServerProviderUsageW
  * established, so the last good snapshot stays; `unsupported` is
  * authoritative and replaces them.
  *
- * A successful probe replaces the published windows outright, including any
- * runtime update that landed while it was running. That is a deliberate
- * trade-off: the Codex and Claude reads take a few seconds at most, the
- * probe is the fresher full read in every case except that window, and the
- * per-window epoch bookkeeping needed to reconcile the two was more code
- * than the sub-second regression it prevented. The next runtime event
- * corrects it.
+ * Cached probes retain their reading time. A cached reading must not roll
+ * back a newer runtime update; a fresh full reading replaces the windows.
  */
 export function resolveUsageLimitsAfterProbe(input: {
   readonly published: ServerProviderUsageLimits | undefined;
@@ -128,6 +127,15 @@ export function resolveUsageLimitsAfterProbe(input: {
 }): ServerProviderUsageLimits | undefined {
   const { published, probed } = input;
   if (probed?.unavailable?.reason === "probeFailed" && published && !published.unavailable) {
+    return published;
+  }
+  if (
+    probed &&
+    published &&
+    !probed.unavailable &&
+    !published.unavailable &&
+    Date.parse(probed.checkedAt) < Date.parse(published.checkedAt)
+  ) {
     return published;
   }
   return probed;

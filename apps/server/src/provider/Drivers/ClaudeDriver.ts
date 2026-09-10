@@ -282,7 +282,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         displayName,
         accentColor,
         enabled,
-        snapshot,
+        snapshot: {
+          ...snapshot,
+          // Explicit refreshes re-read usage; periodic health checks keep their cache.
+          refresh: Cache.invalidate(capabilitiesProbeCache, capabilitiesCacheKey).pipe(
+            Effect.andThen(snapshot.refresh),
+          ),
+        },
         auth,
         snapshotForCwd,
         adapter,

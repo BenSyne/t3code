@@ -21,6 +21,23 @@ const weekly = {
 const published = { checkedAt, windows: [session, weekly] };
 
 describe("applyUsageLimitsUpdate", () => {
+  it("publishes model scope changes and preserves scope on sparse updates", () => {
+    const previous = { checkedAt, windows: [weekly] };
+    const scoped = { ...weekly, modelFamily: "Fable" };
+    const next = applyUsageLimitsUpdate({ previous, checkedAt, update: { windows: [scoped] } });
+    expect(next).not.toBe(previous);
+    expect(next?.windows).toEqual([scoped]);
+    expect(
+      applyUsageLimitsUpdate({ previous: next, checkedAt, update: { windows: [weekly] } }),
+    ).toBe(next);
+    expect(
+      applyUsageLimitsUpdate({
+        previous: next,
+        checkedAt,
+        update: { windows: [{ ...weekly, usedPercent: 80 }] },
+      })?.windows,
+    ).toEqual([{ ...scoped, usedPercent: 80 }]);
+  });
   it("returns the published object itself when no window moved", () => {
     // Codex repeats the same numbers beside every token-usage tick; the
     // ingestion path relies on identity to skip the publish.
@@ -79,6 +96,15 @@ describe("applyUsageLimitsUpdate", () => {
 });
 
 describe("resolveUsageLimitsAfterProbe", () => {
+  it("does not roll back live usage to an older cached reading", () => {
+    const cached = {
+      checkedAt: "2026-09-03T11:55:00.000Z",
+      windows: [{ ...session, usedPercent: 10 }],
+    };
+    expect(resolveUsageLimitsAfterProbe({ published, probed: cached })).toBe(published);
+    const fresh = { ...cached, checkedAt: "2026-09-03T12:01:00.000Z" };
+    expect(resolveUsageLimitsAfterProbe({ published, probed: fresh })).toBe(fresh);
+  });
   it("keeps the last good windows through a failed probe but not an unsupported one", () => {
     const failed = { checkedAt, windows: [], unavailable: { reason: "probeFailed" as const } };
     const unsupported = { checkedAt, windows: [], unavailable: { reason: "unsupported" as const } };

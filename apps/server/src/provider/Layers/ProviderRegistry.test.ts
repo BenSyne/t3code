@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import type { SDKControlGetUsageResponse } from "@anthropic-ai/claude-agent-sdk";
 import { describe, it, assert } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -138,6 +139,8 @@ function booleanDescriptor(id: string, label: string) {
 }
 
 type TestClaudeCapabilities = {
+  readonly usageCheckedAt?: string;
+  readonly usage?: Pick<SDKControlGetUsageResponse, "rate_limits_available" | "rate_limits">;
   readonly email: string | undefined;
   readonly subscriptionType: string | undefined;
   readonly tokenSource: string | undefined;
@@ -2875,12 +2878,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         }).pipe(Effect.provide(recorded.layer));
       });
 
-      it.effect("includes probed claude slash commands in the provider snapshot", () =>
+      it.effect("includes probed claude slash commands and preserves the usage reading time", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
             defaultClaudeSettings,
             claudeCapabilities({
               subscriptionType: "maxplan",
+              usageCheckedAt: "2020-01-01T00:00:00.000Z",
+              usage: {
+                rate_limits_available: true,
+                rate_limits: { five_hour: { utilization: 24, resets_at: null } },
+              },
               slashCommands: [
                 {
                   name: "review",
@@ -2891,6 +2899,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             }),
           );
 
+          assert.strictEqual(status.usageLimits?.checkedAt, "2020-01-01T00:00:00.000Z");
+          assert.strictEqual(status.usageLimits?.windows[0]?.usedPercent, 24);
           assert.deepStrictEqual(status.slashCommands.slice(1), [
             {
               name: "review",
