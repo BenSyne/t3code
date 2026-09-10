@@ -56,6 +56,21 @@ update can roll back to the previous version. If the update still fails:
 2. Check that you updated the server's machine, not only the device you are using.
 3. For a command-line server, stop it and relaunch the exact version shown in the notice.
 
+## Automatically update provider CLIs
+
+Enable **Settings → Providers → Advanced → Automatically update provider CLIs**
+on the machine running your agents. It is off by default. T3 Code checks at
+startup, when settings change, and every 15 minutes while the server runs.
+It defers installation while T3 tasks are busy, including queued turns and
+tasks waiting for an answer.
+
+Automatic updates use the same supported installers as the provider's **Update**
+action, including Codex, Claude Code, OpenCode, Cursor, and Grok where the
+installation supports it. Manually managed installations still need a manual
+update. Accounts sharing one installation are updated together. Failures appear
+in the provider's update status and are retried after six hours; you can retry
+manually sooner. Disabling provider update checks also pauses automatic updates.
+
 ## Mobile updates
 
 Install App Store or Google Play releases as usual. The mobile app can also

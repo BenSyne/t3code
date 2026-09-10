@@ -80,6 +80,7 @@ import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { SubscriptionSettings } from "./SubscriptionSettings";
+import { Switch } from "../ui/switch";
 import { removeSubscriptionAccountReferences } from "@t3tools/shared/serverSettings";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
@@ -1078,6 +1079,28 @@ export function EnvironmentProviderSettings({
       />
 
       <SettingsSection title="Advanced">
+        <SettingsRow
+          title="Automatically update provider CLIs"
+          description="Install supported CLI updates when T3 tasks are idle. Checks every 15 minutes while this server is running. Failed updates retry after six hours; manual updates remain available."
+          status={
+            !settings.enableProviderUpdateChecks
+              ? "Paused: enable provider update checks in Settings → General."
+              : undefined
+          }
+          control={
+            <Switch
+              aria-label="Automatically update provider CLIs"
+              checked={settings.autoUpdateProviders}
+              disabled={readOnly}
+              onCheckedChange={(checked) =>
+                updateSettings({
+                  autoUpdateProviders: checked,
+                  ...(checked ? { enableProviderUpdateChecks: true } : {}),
+                })
+              }
+            />
+          }
+        />
         <SettingsRow
           id={searchableSetting("provider-health-check-interval").id}
           title={
